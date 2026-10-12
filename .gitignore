@@ -1,0 +1,9 @@
+node_modules/
+cloudflare-worker/node_modules/
+.env
+.env.local
+dist/
+uploads/roms/*
+!uploads/roms/.gitkeep
+.DS_Store
+*.log

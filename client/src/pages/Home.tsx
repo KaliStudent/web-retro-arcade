@@ -6,7 +6,9 @@ import { GameCard } from "@/components/GameCard";
 import { ROMUploadDialog } from "@/components/ROMUploadDialog";
 import { EmulatorPlayer } from "@/components/EmulatorPlayer";
 import { SettingsPanel } from "@/components/SettingsPanel";
-import { ThemeToggle } from "@/components/ThemeToggle";
+import { LiveTwitchBar } from "@/components/LiveTwitchBar";
+import { StreamModeModal } from "@/components/StreamModeModal";
+import { QuadStreamArena } from "@/components/QuadStreamArena";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -26,11 +28,14 @@ import {
   Star,
   Clock,
   Play,
+  Grid2X2,
+  Tv,
 } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { getAllGames, toggleFavorite, deleteGame, updateLastPlayed } from "@/lib/api";
 import { queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { streamManager, type StreamMode } from "@/lib/streamManager";
 import type { Game } from "@shared/schema";
 
 const systems = [
@@ -38,7 +43,7 @@ const systems = [
   { id: 'snes', name: 'SNES', formats: ['.smc', '.sfc'] },
   { id: 'gb', name: 'Game Boy', formats: ['.gb', '.gbc'] },
   { id: 'gba', name: 'GBA', formats: ['.gba'] },
-  { id: 'genesis', name: 'Genesis', formats: ['.md', '.bin'] },
+  { id: 'genesis', name: 'Genesis', formats: ['.bin', '.md'] },
   { id: 'n64', name: 'N64', formats: ['.z64', '.n64'] },
 ];
 
@@ -47,7 +52,14 @@ export default function Home() {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
+  const [quadArenaDialogOpen, setQuadArenaDialogOpen] = useState(false);
+
+  // Game Launch State
+  const [pendingGame, setPendingGame] = useState<Game | null>(null);
   const [playingGame, setPlayingGame] = useState<Game | null>(null);
+  const [activeStreamMode, setActiveStreamMode] = useState<StreamMode>('SOLO');
+  const [activePlayerName, setActivePlayerName] = useState<string>('Player_One');
+
   const [activeTab, setActiveTab] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const { toast } = useToast();
@@ -80,9 +92,18 @@ export default function Home() {
     },
   });
 
-  const handlePlayGame = (game: Game) => {
-    updateLastPlayedMutation.mutate(game.id);
-    setPlayingGame(game);
+  // Prompt Mode selection modal before launching
+  const handleInitiatePlay = (game: Game) => {
+    setPendingGame(game);
+  };
+
+  const handleConfirmLaunch = (mode: StreamMode, username: string) => {
+    if (!pendingGame) return;
+    setActiveStreamMode(mode);
+    setActivePlayerName(username);
+    updateLastPlayedMutation.mutate(pendingGame.id);
+    setPlayingGame(pendingGame);
+    setPendingGame(null);
   };
 
   const systemCounts = systems.map(system => ({
@@ -93,7 +114,7 @@ export default function Home() {
   const filteredGames = games.filter(game => {
     const matchesSearch = game.title.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesSystem = !selectedSystem || game.system === systems.find(s => s.id === selectedSystem)?.name;
-    const matchesTab = 
+    const matchesTab =
       activeTab === 'all' ||
       (activeTab === 'favorites' && game.isFavorite) ||
       (activeTab === 'recent' && game.lastPlayed);
@@ -108,7 +129,7 @@ export default function Home() {
     const diffMins = Math.floor(diffMs / 60000);
     const diffHours = Math.floor(diffMs / 3600000);
     const diffDays = Math.floor(diffMs / 86400000);
-    
+
     if (diffMins < 60) return `${diffMins}m ago`;
     if (diffHours < 24) return `${diffHours}h ago`;
     if (diffDays < 7) return `${diffDays}d ago`;
@@ -117,25 +138,14 @@ export default function Home() {
 
   if (playingGame) {
     return (
-      <div className="min-h-screen h-screen bg-background flex flex-col overflow-hidden">
-        <header className="border-b border-border p-2 md:p-4 flex-shrink-0">
-          <div className="max-w-7xl mx-auto flex items-center justify-between">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setPlayingGame(null)}
-              data-testid="button-back-to-library"
-            >
-              Back to Library
-            </Button>
-            <ThemeToggle />
-          </div>
-        </header>
-        <main className="flex-1 p-2 md:p-8 overflow-hidden">
+      <div className="min-h-screen h-screen bg-[#060814] flex flex-col overflow-hidden text-foreground">
+        <main className="flex-1 p-2 md:p-6 overflow-hidden flex flex-col justify-center">
           <EmulatorPlayer
             gameId={playingGame.id}
             gameName={playingGame.title}
             system={playingGame.system}
+            mode={activeStreamMode}
+            username={activePlayerName}
             onClose={() => setPlayingGame(null)}
           />
         </main>
@@ -144,48 +154,96 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <header className="sticky top-0 z-50 border-b border-border bg-background/95 backdrop-blur">
+    <div className="min-h-screen bg-[#060814] text-foreground flex flex-col">
+      {/* Real-time Twitch Status Bar */}
+      <LiveTwitchBar onOpenQuadArena={() => setQuadArenaDialogOpen(true)} />
+
+      {/* Main Arcade Header */}
+      <header className="sticky top-0 z-40 border-b border-[#00f0ff]/20 bg-[#060814]/90 backdrop-blur-md">
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <Gamepad2 className="h-6 w-6 text-primary" />
-            <h1 className="font-display text-xl font-bold">RetroArch Web</h1>
+            <div className="p-2 rounded-lg bg-[#00f0ff]/10 border border-[#00f0ff]/40 shadow-[0_0_15px_rgba(0,240,255,0.4)]">
+              <Gamepad2 className="h-6 w-6 text-[#00f0ff]" />
+            </div>
+            <div>
+              <h1 className="font-display text-xl md:text-2xl font-black tracking-wider text-white">
+                <span className="text-[#00f0ff] neon-glow-blue">WEB</span>{' '}
+                <span className="text-[#ff7700] neon-glow-orange">RETRO</span>{' '}
+                <span className="text-[#ff007f] neon-glow-pink">ARCADE</span>
+              </h1>
+            </div>
           </div>
-          
+
           <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setQuadArenaDialogOpen(true)}
+              className="hidden md:flex font-mono text-xs bg-[#0b132b] border-[#ff007f]/40 text-[#ff00aa] hover:text-white hover:bg-[#ff007f]/20 gap-1.5"
+            >
+              <Grid2X2 className="h-4 w-4" />
+              Quad Arena
+            </Button>
             <Button
               variant="outline"
               size="sm"
               onClick={() => setUploadDialogOpen(true)}
               data-testid="button-header-upload"
-              className="gap-2"
+              className="font-mono text-xs bg-[#0b132b] border-[#00f0ff]/30 text-cyan-300 hover:text-white hover:bg-[#00f0ff]/20 gap-1.5"
             >
               <Upload className="h-4 w-4" />
-              Upload
+              Upload ROM
             </Button>
             <Button
               variant="ghost"
               size="icon"
               onClick={() => setSettingsDialogOpen(true)}
               data-testid="button-header-settings"
+              className="text-cyan-300 hover:text-white hover:bg-[#00f0ff]/10"
             >
               <Settings className="h-4 w-4" />
             </Button>
-            <ThemeToggle />
           </div>
         </div>
       </header>
 
+      {/* 80s/90s Synthwave Hero with Sun & Horizon Grid */}
       <Hero
         onGetStarted={() => {
           document.getElementById('library')?.scrollIntoView({ behavior: 'smooth' });
         }}
         onUpload={() => setUploadDialogOpen(true)}
+        onGoLive={() => {
+          if (games.length > 0) {
+            handleInitiatePlay(games[0]);
+          } else {
+            setUploadDialogOpen(true);
+          }
+        }}
+        onOpenQuadArena={() => setQuadArenaDialogOpen(true)}
       />
 
-      <div id="library" className="max-w-7xl mx-auto px-4 py-12">
+      {/* Arcade Game Library & Systems */}
+      <div id="library" className="max-w-7xl mx-auto px-4 py-12 flex-1 w-full">
+        {/* Systems Grid */}
         <section className="mb-12">
-          <h2 className="font-display text-3xl font-bold mb-6">Select System</h2>
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="font-display text-2xl md:text-3xl font-bold tracking-wide text-white flex items-center gap-2">
+              <span className="w-2.5 h-6 bg-[#00f0ff] rounded-sm inline-block shadow-[0_0_10px_#00f0ff]" />
+              SELECT ARCADE SYSTEM
+            </h2>
+            {selectedSystem && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setSelectedSystem(null)}
+                className="font-mono text-xs text-[#00f0ff] hover:underline"
+              >
+                Clear Filter
+              </Button>
+            )}
+          </div>
+
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
             {systemCounts.map((system) => (
               <SystemCard
@@ -201,28 +259,32 @@ export default function Home() {
           </div>
         </section>
 
+        {/* Game Library Section */}
         <section>
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
-            <h2 className="font-display text-3xl font-bold">Game Library</h2>
-            
+            <h2 className="font-display text-2xl md:text-3xl font-bold tracking-wide text-white flex items-center gap-2">
+              <span className="w-2.5 h-6 bg-[#ff7700] rounded-sm inline-block shadow-[0_0_10px_#ff7700]" />
+              ARCADE VAULT
+            </h2>
+
             <div className="flex items-center gap-2 flex-wrap">
               <div className="relative flex-1 md:flex-initial md:w-64">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#00f0ff]" />
                 <Input
                   type="search"
-                  placeholder="Search games..."
-                  className="pl-9"
+                  placeholder="Search arcade titles..."
+                  className="pl-9 bg-[#0b1024] border-[#00f0ff]/30 text-white font-mono placeholder:text-cyan-300/40 focus:border-[#00f0ff]"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   data-testid="input-search-games"
                 />
               </div>
-              
-              <div className="flex gap-1 border border-border rounded-md p-1">
+
+              <div className="flex gap-1 border border-[#00f0ff]/30 rounded-lg p-1 bg-[#090d20]">
                 <Button
                   size="icon"
                   variant={viewMode === 'grid' ? 'secondary' : 'ghost'}
-                  className="h-8 w-8"
+                  className={`h-8 w-8 ${viewMode === 'grid' ? 'bg-[#00f0ff] text-black' : 'text-cyan-300'}`}
                   onClick={() => setViewMode('grid')}
                   data-testid="button-view-grid"
                 >
@@ -231,7 +293,7 @@ export default function Home() {
                 <Button
                   size="icon"
                   variant={viewMode === 'list' ? 'secondary' : 'ghost'}
-                  className="h-8 w-8"
+                  className={`h-8 w-8 ${viewMode === 'list' ? 'bg-[#00f0ff] text-black' : 'text-cyan-300'}`}
                   onClick={() => setViewMode('list')}
                   data-testid="button-view-list"
                 >
@@ -242,16 +304,28 @@ export default function Home() {
           </div>
 
           <Tabs value={activeTab} onValueChange={setActiveTab} className="mb-6">
-            <TabsList>
-              <TabsTrigger value="all" data-testid="tab-all-games">
-                All Games
+            <TabsList className="bg-[#0a0f24] border border-[#00f0ff]/30">
+              <TabsTrigger
+                value="all"
+                data-testid="tab-all-games"
+                className="data-[state=active]:bg-[#00f0ff] data-[state=active]:text-black font-mono text-xs"
+              >
+                All Games ({games.length})
               </TabsTrigger>
-              <TabsTrigger value="favorites" data-testid="tab-favorites" className="gap-2">
-                <Star className="h-4 w-4" />
+              <TabsTrigger
+                value="favorites"
+                data-testid="tab-favorites"
+                className="gap-2 data-[state=active]:bg-[#ff007f] data-[state=active]:text-white font-mono text-xs"
+              >
+                <Star className="h-3.5 w-3.5" />
                 Favorites
               </TabsTrigger>
-              <TabsTrigger value="recent" data-testid="tab-recent" className="gap-2">
-                <Clock className="h-4 w-4" />
+              <TabsTrigger
+                value="recent"
+                data-testid="tab-recent"
+                className="gap-2 data-[state=active]:bg-[#ff7700] data-[state=active]:text-black font-mono text-xs"
+              >
+                <Clock className="h-3.5 w-3.5" />
                 Recent
               </TabsTrigger>
             </TabsList>
@@ -259,31 +333,37 @@ export default function Home() {
 
           {isLoading ? (
             <div className="text-center py-16">
-              <div className="inline-flex p-6 rounded-full bg-muted mb-4 animate-pulse">
-                <Gamepad2 className="h-12 w-12 text-muted-foreground" />
+              <div className="inline-flex p-6 rounded-full bg-[#0d1430] border border-[#00f0ff]/30 mb-4 animate-pulse">
+                <Gamepad2 className="h-12 w-12 text-[#00f0ff]" />
               </div>
-              <p className="text-muted-foreground">Loading games...</p>
+              <p className="text-cyan-300 font-mono">Loading arcade library...</p>
             </div>
           ) : filteredGames.length === 0 ? (
-            <div className="text-center py-16">
-              <div className="inline-flex p-6 rounded-full bg-muted mb-4">
+            <div className="text-center py-16 bg-[#090d20] rounded-2xl border border-[#00f0ff]/20 p-8">
+              <div className="inline-flex p-6 rounded-full bg-[#0d1430] border border-[#00f0ff]/30 mb-4">
                 <Gamepad2 className="h-12 w-12 text-muted-foreground" />
               </div>
-              <h3 className="text-xl font-semibold mb-2">No games found</h3>
-              <p className="text-muted-foreground mb-6">
-                {searchQuery ? 'Try a different search term' : 'Upload your first ROM to get started'}
+              <h3 className="text-xl font-bold text-white mb-2 font-display">No Games Found</h3>
+              <p className="text-cyan-200/60 mb-6 font-mono text-xs">
+                {searchQuery ? 'Try a different search query' : 'Upload your custom ROM files to get started'}
               </p>
-              <Button onClick={() => setUploadDialogOpen(true)} data-testid="button-upload-first-rom">
+              <Button
+                onClick={() => setUploadDialogOpen(true)}
+                className="bg-[#00f0ff] hover:bg-[#00c9d6] text-black font-display font-bold uppercase"
+              >
                 <Upload className="h-4 w-4 mr-2" />
                 Upload ROM
               </Button>
             </div>
           ) : (
-            <div className={viewMode === 'grid' 
-              ? "grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4"
-              : "space-y-2"
-            }>
-              {filteredGames.map((game) => (
+            <div
+              className={
+                viewMode === 'grid'
+                  ? "grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4"
+                  : "space-y-2.5"
+              }
+            >
+              {filteredGames.map((game) =>
                 viewMode === 'grid' ? (
                   <GameCard
                     key={game.id}
@@ -293,85 +373,156 @@ export default function Home() {
                     coverImage={game.coverImage ?? undefined}
                     lastPlayed={formatLastPlayed(game.lastPlayed)}
                     isFavorite={game.isFavorite}
-                    onPlay={() => handlePlayGame(game)}
+                    onPlay={() => handleInitiatePlay(game)}
                     onToggleFavorite={() => toggleFavoriteMutation.mutate(game.id)}
                     onDelete={() => deleteGameMutation.mutate(game.id)}
                   />
                 ) : (
-                  <div key={game.id} className="flex items-center gap-4 p-3 border border-border rounded-md hover-elevate active-elevate-2">
-                    <div className="w-16 h-16 bg-muted rounded-md flex-shrink-0">
-                      {game.coverImage && (
-                        <img src={game.coverImage} alt={game.title} className="w-full h-full object-cover rounded-md" />
+                  <div
+                    key={game.id}
+                    className="flex items-center gap-4 p-3 border border-[#00f0ff]/20 bg-[#090d20] hover:border-[#00f0ff] rounded-xl transition-colors cursor-pointer"
+                    onClick={() => handleInitiatePlay(game)}
+                  >
+                    <div className="w-16 h-16 bg-[#060814] rounded-lg overflow-hidden flex-shrink-0 border border-white/10">
+                      {game.coverImage ? (
+                        <img
+                          src={game.coverImage}
+                          alt={game.title}
+                          className="w-full h-full object-cover"
+                          style={{ imageRendering: 'pixelated' }}
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-[#00f0ff] font-display font-bold">
+                          {game.title.charAt(0)}
+                        </div>
                       )}
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-semibold truncate">{game.title}</h3>
-                      <p className="text-sm text-muted-foreground">{game.system}</p>
+                    <div className="flex-1 min-w-0 font-mono">
+                      <h3 className="font-bold text-white text-sm truncate">{game.title}</h3>
+                      <p className="text-xs text-cyan-300/70">{game.system}</p>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 font-mono">
                       {game.lastPlayed && (
-                        <span className="text-xs text-muted-foreground">{formatLastPlayed(game.lastPlayed)}</span>
+                        <span className="text-xs text-cyan-200/50 hidden sm:inline">
+                          {formatLastPlayed(game.lastPlayed)}
+                        </span>
                       )}
                       <Button
                         size="sm"
-                        onClick={() => handlePlayGame(game)}
-                        data-testid={`button-play-list-${game.id}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleInitiatePlay(game);
+                        }}
+                        className="bg-[#00f0ff] hover:bg-[#00c9d6] text-black font-display font-bold uppercase text-xs"
                       >
-                        <Play className="h-4 w-4 mr-2" />
+                        <Play className="h-3.5 w-3.5 mr-1.5 fill-current" />
                         Play
                       </Button>
                     </div>
                   </div>
                 )
-              ))}
+              )}
             </div>
           )}
         </section>
       </div>
 
-      <Dialog open={uploadDialogOpen} onOpenChange={setUploadDialogOpen}>
-        <DialogContent className="max-w-2xl" data-testid="dialog-upload">
-          <DialogHeader>
-            <DialogTitle>Upload ROM Files</DialogTitle>
-            <DialogDescription>
-              Add games to your library by uploading ROM files
+      {/* Stream Mode Selection Modal */}
+      {pendingGame && (
+        <StreamModeModal
+          isOpen={!!pendingGame}
+          onClose={() => setPendingGame(null)}
+          gameTitle={pendingGame.title}
+          system={pendingGame.system}
+          onConfirm={handleConfirmLaunch}
+        />
+      )}
+
+      {/* 4-Player Quad Arena Spectator Modal */}
+      <Dialog open={quadArenaDialogOpen} onOpenChange={setQuadArenaDialogOpen}>
+        <DialogContent className="max-w-5xl bg-[#070914] border border-[#ff007f]/40 p-4">
+          <DialogHeader className="pb-2">
+            <DialogTitle className="text-2xl font-display font-bold text-white flex items-center gap-2">
+              <Grid2X2 className="h-6 w-6 text-[#ff007f]" />
+              4-Player Quad Arena Spectator View
+            </DialogTitle>
+            <DialogDescription className="text-xs font-mono text-pink-200/70">
+              Real-time multi-stream arena compositor. Active when 4 or more players broadcast simultaneously.
             </DialogDescription>
           </DialogHeader>
-          <ROMUploadDialog 
+
+          <QuadStreamArena
+            peers={streamManager.getState().quadPeers}
+            twitchChannel={streamManager.getState().twitchChannel}
+          />
+
+          <div className="flex items-center justify-between pt-2 border-t border-white/10 font-mono text-xs">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => streamManager.simulateQuadMode(true)}
+              className="bg-[#0e1634] border-[#00f0ff]/30 text-cyan-300 hover:text-white"
+            >
+              Simulate 4 Active Players
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setQuadArenaDialogOpen(false)}
+              className="text-white hover:bg-white/10"
+            >
+              Close
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Upload ROM Dialog */}
+      <Dialog open={uploadDialogOpen} onOpenChange={setUploadDialogOpen}>
+        <DialogContent className="max-w-2xl bg-[#090d20] border border-[#00f0ff]/30" data-testid="dialog-upload">
+          <DialogHeader>
+            <DialogTitle className="font-display text-2xl text-white">Upload Custom ROMs</DialogTitle>
+            <DialogDescription className="text-cyan-200/70 font-mono text-xs">
+              Load your favorite games into the arcade library.
+            </DialogDescription>
+          </DialogHeader>
+          <ROMUploadDialog
             onUploadComplete={() => {
               queryClient.invalidateQueries({ queryKey: ['/api/games'] });
               setUploadDialogOpen(false);
-            }} 
+            }}
           />
         </DialogContent>
       </Dialog>
 
+      {/* Settings Dialog */}
       <Dialog open={settingsDialogOpen} onOpenChange={setSettingsDialogOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto" data-testid="dialog-settings">
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto bg-[#090d20] border border-[#00f0ff]/30" data-testid="dialog-settings">
           <DialogHeader>
-            <DialogTitle>Emulator Settings</DialogTitle>
-            <DialogDescription>
-              Configure video, audio, controls, and advanced options
+            <DialogTitle className="font-display text-2xl text-white">Arcade Settings</DialogTitle>
+            <DialogDescription className="text-cyan-200/70 font-mono text-xs">
+              Configure CRT emulation, audio, and gamepad mappings.
             </DialogDescription>
           </DialogHeader>
           <SettingsPanel />
         </DialogContent>
       </Dialog>
 
-      <footer className="border-t border-border mt-24">
+      {/* Footer */}
+      <footer className="border-t border-[#00f0ff]/20 bg-[#050711] mt-16">
         <div className="max-w-7xl mx-auto px-4 py-8">
-          <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="flex flex-col md:flex-row items-center justify-between gap-4 font-mono text-xs">
             <div className="flex items-center gap-3">
-              <Gamepad2 className="h-5 w-5 text-primary" />
-              <span className="text-sm text-muted-foreground">
-                RetroArch Web - Classic Gaming Reimagined
+              <Gamepad2 className="h-5 w-5 text-[#00f0ff]" />
+              <span className="text-cyan-200/70">
+                Web Retro Arcade &bull; 80s &bull; 90s Classic Gaming Reimagined
               </span>
             </div>
-            <div className="flex flex-col md:flex-row items-center gap-4 text-xs text-muted-foreground">
-              <p>Emulators are legal. Ensure you own the games you play.</p>
+            <div className="flex flex-col md:flex-row items-center gap-4 text-cyan-300/50">
+              <p>Emulators are legal. Ensure you own games played.</p>
               <div className="flex gap-4">
-                <a href="/terms" className="hover:text-primary transition-colors">Terms of Use</a>
-                <a href="/privacy" className="hover:text-primary transition-colors">Privacy Policy</a>
+                <a href="/terms" className="hover:text-[#00f0ff] transition-colors">Terms of Use</a>
+                <a href="/privacy" className="hover:text-[#00f0ff] transition-colors">Privacy Policy</a>
               </div>
             </div>
           </div>

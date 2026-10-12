@@ -47,6 +47,123 @@ export class MemStorage implements IStorage {
       saveLocation: '/saves',
       updatedAt: new Date(),
     };
+
+    // Seed built-in homebrew & public domain classic retro games
+    this.seedDefaultGames();
+  }
+
+  private seedDefaultGames() {
+    const defaultGames: Array<Omit<Game, "id" | "createdAt">> = [
+      {
+        title: "Space Invaders Deluxe",
+        system: "NES",
+        romFileName: "invaders.nes",
+        romFilePath: "/roms/invaders.nes",
+        fileSize: 32784,
+        coverImage: "/covers/invaders.png",
+        isFavorite: true,
+        lastPlayed: new Date(Date.now() - 3600000),
+      },
+      {
+        title: "Flappy Bird 8-Bit",
+        system: "NES",
+        romFileName: "flappybird.nes",
+        romFilePath: "/roms/flappybird.nes",
+        fileSize: 24592,
+        coverImage: "/covers/flappybird.png",
+        isFavorite: true,
+        lastPlayed: new Date(Date.now() - 7200000),
+      },
+      {
+        title: "Driar Arcade Adventure",
+        system: "NES",
+        romFileName: "driar.nes",
+        romFilePath: "/roms/driar.nes",
+        fileSize: 131088,
+        coverImage: "/covers/driar.png",
+        isFavorite: false,
+        lastPlayed: null,
+      },
+      {
+        title: "Blaster Master Retro",
+        system: "NES",
+        romFileName: "blaster.nes",
+        romFilePath: "/roms/blaster.nes",
+        fileSize: 24592,
+        coverImage: "/covers/blaster.png",
+        isFavorite: false,
+        lastPlayed: null,
+      },
+      {
+        title: "Bomb Array Strategy",
+        system: "NES",
+        romFileName: "bombarray.nes",
+        romFilePath: "/roms/bombarray.nes",
+        fileSize: 16400,
+        coverImage: "/covers/bombarray.png",
+        isFavorite: false,
+        lastPlayed: null,
+      },
+      {
+        title: "Babel Blox Puzzle",
+        system: "NES",
+        romFileName: "babelblox.nes",
+        romFilePath: "/roms/babelblox.nes",
+        fileSize: 524304,
+        coverImage: "/covers/babelblox.png",
+        isFavorite: false,
+        lastPlayed: null,
+      },
+      {
+        title: "Astro Hawk 16-Bit",
+        system: "SNES",
+        romFileName: "astrohawk.smc",
+        romFilePath: "/roms/astrohawk.smc",
+        fileSize: 786944,
+        coverImage: "/covers/astrohawk.png",
+        isFavorite: true,
+        lastPlayed: new Date(Date.now() - 14400000),
+      },
+      {
+        title: "Anguna: Demonic Lord",
+        system: "GBA",
+        romFileName: "anguna.gba",
+        romFilePath: "/roms/anguna.gba",
+        fileSize: 1710888,
+        coverImage: "/covers/anguna.png",
+        isFavorite: true,
+        lastPlayed: null,
+      },
+      {
+        title: "Asteroids 32-Bit Enhanced",
+        system: "GBA",
+        romFileName: "asteroidsb.gba",
+        romFilePath: "/roms/asteroidsb.gba",
+        fileSize: 80240,
+        coverImage: "/covers/asteroidsb.png",
+        isFavorite: false,
+        lastPlayed: null,
+      },
+      {
+        title: "Barbarian Arcade Action",
+        system: "Genesis",
+        romFileName: "barbarian.bin",
+        romFilePath: "/roms/barbarian.bin",
+        fileSize: 2296122,
+        coverImage: "/covers/barbarian.png",
+        isFavorite: false,
+        lastPlayed: null,
+      },
+    ];
+
+    for (const g of defaultGames) {
+      const id = randomUUID();
+      this.games.set(id, {
+        ...g,
+        id,
+        createdAt: new Date(),
+      });
+    }
   }
 
   // User methods

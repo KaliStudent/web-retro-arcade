@@ -1,0 +1,18 @@
+name = "neon-retro-arcade-worker"
+main = "src/index.ts"
+compatibility_date = "2024-10-01"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+TWITCH_CHANNEL_NAME = "NeonArcadeLive"
+SIMULATION_MODE = "auto"
+
+# Durable Object binding for stream room state, queue hand-off, and quad-mode events
+[durable_objects]
+bindings = [
+  { name = "STREAM_COORDINATOR", class_name = "StreamCoordinator" }
+]
+
+[[migrations]]
+tag = "v1"
+new_classes = ["StreamCoordinator"]

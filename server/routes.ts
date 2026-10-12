@@ -3,6 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import multer from "multer";
 import path from "path";
+import fs from "fs";
 import { insertGameSchema, insertSettingsSchema } from "@shared/schema";
 import { put } from "@vercel/blob";
 
@@ -187,21 +188,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: 'Game not found' });
       }
 
-      // If it's a Vercel Blob URL (starts with https://), redirect to it
-      if (game.romFilePath.startsWith('https://')) {
+      // If it's a remote URL (Vercel Blob or external), redirect to it
+      if (game.romFilePath.startsWith('http://') || game.romFilePath.startsWith('https://')) {
         return res.redirect(game.romFilePath);
       }
 
-      // Otherwise, serve from local file system (development mode)
-      const filePath = path.resolve(game.romFilePath);
-
-      // Additional security check: ensure the resolved path is within uploads directory
-      const uploadsDir = path.resolve(process.cwd(), 'uploads', 'roms');
-      if (!filePath.startsWith(uploadsDir)) {
-        return res.status(403).json({ error: 'Access denied' });
+      // If it's a seeded public ROM (e.g., /roms/invaders.nes)
+      if (game.romFilePath.startsWith('/roms/')) {
+        const publicPath = path.resolve(process.cwd(), 'client', 'public', game.romFilePath.replace(/^\//, ''));
+        if (fs.existsSync(publicPath)) {
+          return res.sendFile(publicPath);
+        }
+        return res.redirect(game.romFilePath);
       }
 
-      res.sendFile(filePath);
+      // Otherwise, serve from local file system (development uploads)
+      const filePath = path.resolve(game.romFilePath);
+      const uploadsDir = path.resolve(process.cwd(), 'uploads', 'roms');
+      if (filePath.startsWith(uploadsDir) && fs.existsSync(filePath)) {
+        return res.sendFile(filePath);
+      }
+
+      // Fallback: check client/public
+      const fallbackPublic = path.resolve(process.cwd(), 'client', 'public', game.romFileName);
+      if (fs.existsSync(fallbackPublic)) {
+        return res.sendFile(fallbackPublic);
+      }
+
+      return res.status(404).json({ error: 'ROM file not found on disk' });
     } catch (error) {
       console.error('ROM serving error:', error);
       res.status(500).json({ error: 'Failed to serve ROM file' });
