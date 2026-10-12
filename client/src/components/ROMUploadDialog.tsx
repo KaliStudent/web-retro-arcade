@@ -10,6 +10,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Upload, CheckCircle2, Loader2 } from "lucide-react";
+import { localDB } from "@/lib/localStorageDB";
 
 interface ROMUploadDialogProps {
   onUploadComplete?: () => void;
@@ -21,7 +22,7 @@ const SYSTEMS = [
   { id: 'gb', name: 'Game Boy', core: 'gb' },
   { id: 'gbc', name: 'Game Boy Color', core: 'gbc' },
   { id: 'gba', name: 'Game Boy Advance', core: 'gba' },
-  { id: 'genesis', name: 'Genesis', core: 'genesis' },
+  { id: 'genesis', name: 'Genesis', core: 'segaMD' },
   { id: 'n64', name: 'Nintendo 64', core: 'n64' },
   { id: 'psx', name: 'PlayStation', core: 'psx' },
 ];
@@ -48,17 +49,37 @@ export function ROMUploadDialog({ onUploadComplete }: ROMUploadDialogProps) {
 
     setIsUploading(true);
     try {
-      const formData = new FormData();
-      formData.append('rom', selectedFile);
-      formData.append('title', title);
-      formData.append('system', system);
+      // 1. Save locally in browser IndexedDB (Guaranteed local play regardless of file size)
+      const arrayBuffer = await selectedFile.arrayBuffer();
+      const localId = 'local_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
 
-      const response = await fetch('/api/games/upload', {
-        method: 'POST',
-        body: formData,
+      await localDB.addROM({
+        id: localId,
+        title,
+        system,
+        fileName: selectedFile.name,
+        fileData: arrayBuffer,
+        fileSize: selectedFile.size,
+        createdAt: new Date(),
+        isFavorite: false,
       });
 
-      if (!response.ok) throw new Error('Upload failed');
+      // 2. Also attempt server sync if within Vercel's 4.5MB limit
+      if (selectedFile.size <= 4.5 * 1024 * 1024) {
+        try {
+          const formData = new FormData();
+          formData.append('rom', selectedFile);
+          formData.append('title', title);
+          formData.append('system', system);
+
+          await fetch('/api/games/upload', {
+            method: 'POST',
+            body: formData,
+          });
+        } catch (serverErr) {
+          console.warn('Server upload sync notice (stored locally):', serverErr);
+        }
+      }
 
       setUploadSuccess(true);
       setTimeout(() => {
@@ -68,7 +89,7 @@ export function ROMUploadDialog({ onUploadComplete }: ROMUploadDialogProps) {
         setTitle("");
         setSystem("");
         setUploadSuccess(false);
-      }, 1500);
+      }, 1000);
     } catch (error) {
       console.error('Upload error:', error);
     } finally {

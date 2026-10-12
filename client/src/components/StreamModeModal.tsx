@@ -27,7 +27,7 @@ export function StreamModeModal({
   system,
   onConfirm,
 }: StreamModeModalProps) {
-  const [selectedMode, setSelectedMode] = useState<StreamMode>('STREAMING');
+  const [selectedMode, setSelectedMode] = useState<StreamMode>('SOLO');
   const [username, setUsername] = useState('');
 
   useEffect(() => {

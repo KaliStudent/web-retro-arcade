@@ -53,8 +53,9 @@ export class MemStorage implements IStorage {
   }
 
   private seedDefaultGames() {
-    const defaultGames: Array<Omit<Game, "id" | "createdAt">> = [
+    const defaultGames: Array<Omit<Game, "createdAt">> = [
       {
+        id: "nes-invaders",
         title: "Space Invaders Deluxe",
         system: "NES",
         romFileName: "invaders.nes",
@@ -65,6 +66,7 @@ export class MemStorage implements IStorage {
         lastPlayed: new Date(Date.now() - 3600000),
       },
       {
+        id: "nes-flappybird",
         title: "Flappy Bird 8-Bit",
         system: "NES",
         romFileName: "flappybird.nes",
@@ -75,6 +77,7 @@ export class MemStorage implements IStorage {
         lastPlayed: new Date(Date.now() - 7200000),
       },
       {
+        id: "nes-driar",
         title: "Driar Arcade Adventure",
         system: "NES",
         romFileName: "driar.nes",
@@ -85,6 +88,7 @@ export class MemStorage implements IStorage {
         lastPlayed: null,
       },
       {
+        id: "nes-blaster",
         title: "Blaster Master Retro",
         system: "NES",
         romFileName: "blaster.nes",
@@ -95,6 +99,7 @@ export class MemStorage implements IStorage {
         lastPlayed: null,
       },
       {
+        id: "nes-bombarray",
         title: "Bomb Array Strategy",
         system: "NES",
         romFileName: "bombarray.nes",
@@ -105,6 +110,7 @@ export class MemStorage implements IStorage {
         lastPlayed: null,
       },
       {
+        id: "nes-babelblox",
         title: "Babel Blox Puzzle",
         system: "NES",
         romFileName: "babelblox.nes",
@@ -115,6 +121,7 @@ export class MemStorage implements IStorage {
         lastPlayed: null,
       },
       {
+        id: "snes-astrohawk",
         title: "Astro Hawk 16-Bit",
         system: "SNES",
         romFileName: "astrohawk.smc",
@@ -125,6 +132,7 @@ export class MemStorage implements IStorage {
         lastPlayed: new Date(Date.now() - 14400000),
       },
       {
+        id: "gba-anguna",
         title: "Anguna: Demonic Lord",
         system: "GBA",
         romFileName: "anguna.gba",
@@ -135,6 +143,7 @@ export class MemStorage implements IStorage {
         lastPlayed: null,
       },
       {
+        id: "gba-asteroidsb",
         title: "Asteroids 32-Bit Enhanced",
         system: "GBA",
         romFileName: "asteroidsb.gba",
@@ -145,6 +154,7 @@ export class MemStorage implements IStorage {
         lastPlayed: null,
       },
       {
+        id: "genesis-barbarian",
         title: "Barbarian Arcade Action",
         system: "Genesis",
         romFileName: "barbarian.bin",
@@ -157,10 +167,8 @@ export class MemStorage implements IStorage {
     ];
 
     for (const g of defaultGames) {
-      const id = randomUUID();
-      this.games.set(id, {
+      this.games.set(g.id, {
         ...g,
-        id,
         createdAt: new Date(),
       });
     }
@@ -192,7 +200,18 @@ export class MemStorage implements IStorage {
   }
 
   async getGameById(id: string): Promise<Game | undefined> {
-    return this.games.get(id);
+    const direct = this.games.get(id);
+    if (direct) return direct;
+
+    // Resilient fallback: search by id, romFileName, or title match
+    const normalized = id.toLowerCase().replace(/[^a-z0-9]/g, '');
+    return Array.from(this.games.values()).find((g) => {
+      if (g.id === id) return true;
+      if (g.romFileName.toLowerCase() === id.toLowerCase()) return true;
+      if (g.romFilePath.toLowerCase().includes(id.toLowerCase())) return true;
+      const gameNorm = g.title.toLowerCase().replace(/[^a-z0-9]/g, '');
+      return gameNorm.includes(normalized) || normalized.includes(gameNorm);
+    });
   }
 
   async getGamesBySystem(system: string): Promise<Game[]> {

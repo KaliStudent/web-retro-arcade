@@ -27,6 +27,7 @@ interface EmulatorPlayerProps {
   gameId: string;
   gameName: string;
   system: string;
+  gameUrl?: string;
   mode?: StreamMode;
   username?: string;
   onClose?: () => void;
@@ -36,9 +37,10 @@ const SYSTEM_CORES: Record<string, string> = {
   'NES': 'nes',
   'SNES': 'snes',
   'Game Boy': 'gb',
-  'Game Boy Color': 'gbc',
+  'Game Boy Color': 'gb',
   'Game Boy Advance': 'gba',
-  'Genesis': 'genesis',
+  'Genesis': 'segaMD',
+  'Mega Drive': 'segaMD',
   'Nintendo 64': 'n64',
   'PlayStation': 'psx',
   'GBA': 'gba',
@@ -49,6 +51,7 @@ export function EmulatorPlayer({
   gameId,
   gameName,
   system,
+  gameUrl,
   mode = 'SOLO',
   username = 'Player_One',
   onClose,
@@ -115,7 +118,15 @@ export function EmulatorPlayer({
       (window as any).EJS_gameName = gameName;
       (window as any).EJS_color = '#00f0ff';
       (window as any).EJS_pathtodata = 'https://cdn.emulatorjs.org/stable/data/';
-      (window as any).EJS_gameUrl = `/api/roms/${gameId}`;
+
+      let resolvedUrl = gameUrl;
+      if (!resolvedUrl) {
+        resolvedUrl = `/api/roms/${gameId}`;
+      } else if (resolvedUrl.startsWith('/') && !resolvedUrl.startsWith('/api/')) {
+        resolvedUrl = window.location.origin + resolvedUrl;
+      }
+
+      (window as any).EJS_gameUrl = resolvedUrl;
       (window as any).EJS_startOnLoaded = true;
       (window as any).EJS_volume = isMuted ? 0 : 0.75;
 

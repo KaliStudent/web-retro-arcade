@@ -109,10 +109,19 @@ class StreamManager {
     this.currentSystem = system;
     this.updateState({ mode: 'STREAMING' });
 
+    // If running on Vercel without a dedicated Cloudflare Worker WS endpoint configured,
+    // seamlessly use the realistic arcade simulation engine to avoid browser WebSocket errors.
+    const customWsUrl = (import.meta as any).env?.VITE_WORKER_WS_URL;
+    const isVercelHost = window.location.host.includes('vercel.app') || window.location.host.includes('ceaseandquiet.com');
+
+    if (!customWsUrl && isVercelHost) {
+      this.activateSimulationFallback();
+      return;
+    }
+
     // Determine WebSocket URL
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    // Worker runs on same domain or /api/stream-room/ws
-    const wsUrl = `${protocol}//${window.location.host}/api/stream-room/ws`;
+    const wsUrl = customWsUrl || `${protocol}//${window.location.host}/api/stream-room/ws`;
 
     try {
       this.socket = new WebSocket(wsUrl);

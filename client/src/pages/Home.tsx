@@ -36,6 +36,8 @@ import { getAllGames, toggleFavorite, deleteGame, updateLastPlayed } from "@/lib
 import { queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { streamManager, type StreamMode } from "@/lib/streamManager";
+import { localDB } from "@/lib/localStorageDB";
+import { useEffect } from "react";
 import type { Game } from "@shared/schema";
 
 const systems = [
@@ -64,10 +66,43 @@ export default function Home() {
   const [searchQuery, setSearchQuery] = useState('');
   const { toast } = useToast();
 
-  const { data: games = [], isLoading } = useQuery({
+  const [localGames, setLocalGames] = useState<Game[]>([]);
+
+  const loadLocalROMs = async () => {
+    try {
+      const roms = await localDB.getAllROMs();
+      const converted: Game[] = roms.map((r) => ({
+        id: r.id,
+        title: r.title,
+        system: r.system,
+        romFileName: r.fileName,
+        romFilePath: URL.createObjectURL(new Blob([r.fileData])),
+        fileSize: r.fileSize,
+        coverImage: null,
+        isFavorite: r.isFavorite,
+        lastPlayed: r.lastPlayed || null,
+        createdAt: r.createdAt,
+      }));
+      setLocalGames(converted);
+    } catch (e) {
+      console.error('Failed to load local ROMs from IndexedDB:', e);
+    }
+  };
+
+  useEffect(() => {
+    loadLocalROMs();
+  }, []);
+
+  const { data: serverGames = [], isLoading } = useQuery({
     queryKey: ['/api/games'],
     queryFn: getAllGames,
   });
+
+  // Merge server games and locally stored ROMs
+  const games: Game[] = [
+    ...localGames,
+    ...serverGames.filter((sg) => !localGames.some((lg) => lg.id === sg.id)),
+  ];
 
   const toggleFavoriteMutation = useMutation({
     mutationFn: toggleFavorite,
@@ -144,6 +179,7 @@ export default function Home() {
             gameId={playingGame.id}
             gameName={playingGame.title}
             system={playingGame.system}
+            gameUrl={playingGame.romFilePath}
             mode={activeStreamMode}
             username={activePlayerName}
             onClose={() => setPlayingGame(null)}
@@ -488,6 +524,7 @@ export default function Home() {
           </DialogHeader>
           <ROMUploadDialog
             onUploadComplete={() => {
+              loadLocalROMs();
               queryClient.invalidateQueries({ queryKey: ['/api/games'] });
               setUploadDialogOpen(false);
             }}

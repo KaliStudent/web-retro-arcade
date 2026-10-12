@@ -11,6 +11,17 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
+// Global CORS Middleware for Vercel
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Range, X-Requested-With');
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+  next();
+});
+
 // Check if running on Vercel
 const isVercel = process.env.VERCEL === '1';
 
@@ -161,7 +172,8 @@ app.get("/api/roms/:gameId", async (req, res) => {
       return res.status(404).json({ error: 'Game not found' });
     }
 
-    // Redirect to Blob URL
+    // Redirect to Blob URL or public static path with CORS
+    res.header('Access-Control-Allow-Origin', '*');
     res.redirect(game.romFilePath);
   } catch (error) {
     console.error('ROM serving error:', error);
