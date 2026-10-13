@@ -15,12 +15,15 @@ import {
   ArrowLeft,
   Users,
   Grid2X2,
+  Gamepad2,
+  Keyboard,
 } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { videoRecorder, type RecordingResult } from "@/lib/videoRecorder";
 import { streamManager, type StreamMode, type StreamState } from "@/lib/streamManager";
 import { SessionRecordingModal } from "@/components/SessionRecordingModal";
 import { QuadStreamArena } from "@/components/QuadStreamArena";
+import { ControlsGuideModal } from "@/components/ControlsGuideModal";
 import { useToast } from "@/hooks/use-toast";
 
 interface EmulatorPlayerProps {
@@ -62,6 +65,11 @@ export function EmulatorPlayer({
   const [emulatorReady, setEmulatorReady] = useState(false);
   const [crtEnabled, setCrtEnabled] = useState(true);
 
+  // Focus & Controls State
+  const [isScreenFocused, setIsScreenFocused] = useState(true);
+  const [connectedGamepadName, setConnectedGamepadName] = useState<string | null>(null);
+  const [controlsModalOpen, setControlsModalOpen] = useState(false);
+
   // Video Recording State
   const [isRecording, setIsRecording] = useState(false);
   const [recordingElapsed, setRecordingElapsed] = useState('00:00');
@@ -74,6 +82,8 @@ export function EmulatorPlayer({
 
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const prevButtonsRef = useRef<Record<number, boolean>>({});
+  const prevAxesRef = useRef<Record<string, boolean>>({});
   const { toast } = useToast();
 
   // 1. Initialize Streaming if in STREAMING mode
@@ -108,7 +118,212 @@ export function EmulatorPlayer({
     };
   }, []);
 
-  // 3. Load EmulatorJS dynamically
+  // 3. Global Keyboard Listener (Forwarding to EmulatorJS & ensuring focus)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Do not intercept if user is typing in form inputs
+      if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName)) {
+        return;
+      }
+
+      const emu = (window as any).EJS_emulator;
+      const gameKeyCodes = [
+        38, 40, 37, 39, // Arrows
+        87, 83, 65, 68, // WASD
+        90, 88, 65, 83, 81, 69, // Z, X, A, S, Q, E
+        74, 75, 85, 73, // J, K, U, I
+        13, 16, 32, 86, 8, 9, // Enter, Shift, Space, V, Backspace, Tab
+      ];
+
+      if (gameKeyCodes.includes(e.keyCode)) {
+        // Prevent browser page scroll on arrow keys and space
+        if ([38, 40, 37, 39, 32].includes(e.keyCode)) {
+          e.preventDefault();
+        }
+
+        // Re-focus container if focus drifted
+        if (containerRef.current && document.activeElement !== containerRef.current) {
+          containerRef.current.focus();
+          setIsScreenFocused(true);
+        }
+
+        if (emu) {
+          // Direct fallback simulation for alternate player controls
+          // Select (Shift / Space / V):
+          if (e.keyCode === 32 || e.keyCode === 16 || e.keyCode === 86) {
+            emu.gameManager?.simulateInput(0, 2, 1);
+          }
+          // Alternative WASD D-Pad:
+          if (e.keyCode === 87) emu.gameManager?.simulateInput(0, 4, 1); // W -> Up
+          if (e.keyCode === 68) emu.gameManager?.simulateInput(0, 7, 1); // D -> Right
+          // Alternative J / K:
+          if (e.keyCode === 74) emu.gameManager?.simulateInput(0, 8, 1); // J -> B
+          if (e.keyCode === 75) emu.gameManager?.simulateInput(0, 0, 1); // K -> A
+
+          // Standard EmulatorJS Key handler
+          if (typeof emu.keyChange === 'function') {
+            emu.keyChange(e);
+          }
+        }
+      }
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName)) return;
+      const emu = (window as any).EJS_emulator;
+      if (emu) {
+        if (e.keyCode === 32 || e.keyCode === 16 || e.keyCode === 86) {
+          emu.gameManager?.simulateInput(0, 2, 0);
+        }
+        if (e.keyCode === 87) emu.gameManager?.simulateInput(0, 4, 0);
+        if (e.keyCode === 68) emu.gameManager?.simulateInput(0, 7, 0);
+        if (e.keyCode === 74) emu.gameManager?.simulateInput(0, 8, 0);
+        if (e.keyCode === 75) emu.gameManager?.simulateInput(0, 0, 0);
+
+        if (typeof emu.keyChange === 'function') {
+          emu.keyChange(e);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown, { capture: true });
+    window.addEventListener('keyup', handleKeyUp, { capture: true });
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown, { capture: true });
+      window.removeEventListener('keyup', handleKeyUp, { capture: true });
+    };
+  }, []);
+
+  // 4. Dedicated 60 FPS Gamepad Engine
+  useEffect(() => {
+    let animId: number;
+
+    const pollGamepads = () => {
+      try {
+        const rawGps = navigator.getGamepads ? navigator.getGamepads() : [];
+        const activeGamepad = Array.from(rawGps).find((gp): gp is Gamepad => gp !== null && gp.connected);
+
+        if (activeGamepad) {
+          if (connectedGamepadName !== activeGamepad.id) {
+            setConnectedGamepadName(activeGamepad.id);
+          }
+
+          const emu = (window as any).EJS_emulator;
+          if (emu) {
+            // Guarantee EmulatorJS internal gamepad array assignment
+            if (Array.isArray(emu.gamepadSelection)) {
+              const expectedKey = `${activeGamepad.id}_${activeGamepad.index}`;
+              if (emu.gamepadSelection[0] !== expectedKey) {
+                emu.gamepadSelection[0] = expectedKey;
+              }
+            }
+            if (emu.gamepad && Array.isArray(emu.gamepad.gamepads)) {
+              if (!emu.gamepad.gamepads.some((g: any) => g && g.index === activeGamepad.index)) {
+                emu.gamepad.gamepads.push(activeGamepad);
+              }
+            }
+
+            // Direct simulation for 100% responsiveness across all browsers & pads
+            if (emu.gameManager && typeof emu.gameManager.simulateInput === 'function') {
+              const btnMap: Record<number, number> = {
+                0: 0,   // A (South) -> Button 0 (Retro A)
+                1: 8,   // B (East) -> Button 8 (Retro B)
+                2: 1,   // X (West) -> Button 1 (Retro X)
+                3: 9,   // Y (North) -> Button 9 (Retro Y)
+                4: 10,  // L1 -> Button 10 (L)
+                5: 11,  // R1 -> Button 11 (R)
+                8: 2,   // Select / Back / Share -> Button 2 (Select)
+                9: 3,   // Start / Options -> Button 3 (Start)
+                12: 4,  // D-Pad Up -> Button 4 (Up)
+                13: 5,  // D-Pad Down -> Button 5 (Down)
+                14: 6,  // D-Pad Left -> Button 6 (Left)
+                15: 7,  // D-Pad Right -> Button 7 (Right)
+              };
+
+              activeGamepad.buttons.forEach((btn, idx) => {
+                const retroBtn = btnMap[idx];
+                if (retroBtn !== undefined) {
+                  const isDown = btn.pressed || btn.value > 0.5;
+                  const wasDown = !!prevButtonsRef.current[idx];
+                  if (isDown !== wasDown) {
+                    prevButtonsRef.current[idx] = isDown;
+                    emu.gameManager.simulateInput(0, retroBtn, isDown ? 1 : 0);
+                  }
+                }
+              });
+
+              // Analog Left Stick (Deadzone 0.45)
+              const axisX = activeGamepad.axes[0] || 0;
+              const axisY = activeGamepad.axes[1] || 0;
+
+              const stickLeft = axisX < -0.45;
+              if (stickLeft !== !!prevAxesRef.current['left']) {
+                prevAxesRef.current['left'] = stickLeft;
+                emu.gameManager.simulateInput(0, 6, stickLeft ? 1 : 0);
+              }
+
+              const stickRight = axisX > 0.45;
+              if (stickRight !== !!prevAxesRef.current['right']) {
+                prevAxesRef.current['right'] = stickRight;
+                emu.gameManager.simulateInput(0, 7, stickRight ? 1 : 0);
+              }
+
+              const stickUp = axisY < -0.45;
+              if (stickUp !== !!prevAxesRef.current['up']) {
+                prevAxesRef.current['up'] = stickUp;
+                emu.gameManager.simulateInput(0, 4, stickUp ? 1 : 0);
+              }
+
+              const stickDown = axisY > 0.45;
+              if (stickDown !== !!prevAxesRef.current['down']) {
+                prevAxesRef.current['down'] = stickDown;
+                emu.gameManager.simulateInput(0, 5, stickDown ? 1 : 0);
+              }
+            }
+          }
+        } else {
+          if (connectedGamepadName !== null) {
+            setConnectedGamepadName(null);
+          }
+        }
+      } catch (e) {
+        // Ignore polling cycles
+      }
+
+      animId = requestAnimationFrame(pollGamepads);
+    };
+
+    animId = requestAnimationFrame(pollGamepads);
+
+    const onConnected = (e: GamepadEvent) => {
+      toast({
+        title: "🎮 Controller Connected",
+        description: `${e.gamepad.id} assigned to Player 1!`,
+      });
+      setConnectedGamepadName(e.gamepad.id);
+    };
+
+    const onDisconnected = (e: GamepadEvent) => {
+      toast({
+        variant: "destructive",
+        title: "Controller Disconnected",
+        description: `${e.gamepad.id} disconnected.`,
+      });
+      setConnectedGamepadName(null);
+    };
+
+    window.addEventListener("gamepadconnected", onConnected);
+    window.addEventListener("gamepaddisconnected", onDisconnected);
+
+    return () => {
+      cancelAnimationFrame(animId);
+      window.removeEventListener("gamepadconnected", onConnected);
+      window.removeEventListener("gamepaddisconnected", onDisconnected);
+    };
+  }, [connectedGamepadName, toast]);
+
+  // 5. Load EmulatorJS dynamically with complete controls
   useEffect(() => {
     const loadEmulatorJS = () => {
       const core = SYSTEM_CORES[system] || 'nes';
@@ -129,6 +344,29 @@ export function EmulatorPlayer({
       (window as any).EJS_gameUrl = resolvedUrl;
       (window as any).EJS_startOnLoaded = true;
       (window as any).EJS_volume = isMuted ? 0 : 0.75;
+
+      // Configure explicit default controls with Shift for Select, Enter for Start, Z/X for B/A
+      (window as any).EJS_defaultControls = {
+        0: {
+          0: { value: "x", value2: "BUTTON_2" },         // Button A
+          1: { value: "s", value2: "BUTTON_4" },         // Button X
+          2: { value: "shift", value2: "SELECT" },       // Select
+          3: { value: "enter", value2: "START" },        // Start
+          4: { value: "up arrow", value2: "DPAD_UP" },   // Up
+          5: { value: "down arrow", value2: "DPAD_DOWN" }, // Down
+          6: { value: "left arrow", value2: "DPAD_LEFT" }, // Left
+          7: { value: "right arrow", value2: "DPAD_RIGHT" }, // Right
+          8: { value: "z", value2: "BUTTON_1" },         // Button B
+          9: { value: "a", value2: "BUTTON_3" },         // Button Y
+          10: { value: "q", value2: "LEFT_TOP_SHOULDER" }, // L
+          11: { value: "e", value2: "RIGHT_TOP_SHOULDER" }, // R
+        }
+      };
+
+      (window as any).EJS_onGameStart = () => {
+        containerRef.current?.focus();
+        setIsScreenFocused(true);
+      };
 
       if ((window as any).EJS_emulator) {
         setEmulatorReady(true);
@@ -153,15 +391,24 @@ export function EmulatorPlayer({
       let attempts = 0;
       const interval = setInterval(() => {
         attempts++;
+        const container = document.querySelector('#emulator-container') as HTMLDivElement;
         const canvas = document.querySelector('#emulator-container canvas') as HTMLCanvasElement;
         if (canvas) {
           canvasRef.current = canvas;
           streamManager.attachCanvas(canvas);
+          container?.focus();
+          setIsScreenFocused(true);
+
+          canvas.addEventListener('click', () => {
+            container?.focus();
+            setIsScreenFocused(true);
+          });
+
           clearInterval(interval);
-        } else if (attempts > 30) {
+        } else if (attempts > 40) {
           clearInterval(interval);
         }
-      }, 500);
+      }, 300);
     };
 
     loadEmulatorJS();
@@ -180,7 +427,6 @@ export function EmulatorPlayer({
         });
       }
     } else {
-      // Find canvas element
       const canvas = canvasRef.current || (document.querySelector('#emulator-container canvas') as HTMLCanvasElement);
       if (!canvas) {
         toast({
@@ -271,6 +517,22 @@ export function EmulatorPlayer({
               PRIVATE SOLO SESSION
             </span>
           )}
+
+          {/* Controller Status Indicator Pill */}
+          {connectedGamepadName ? (
+            <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-[#39ff14]/15 text-[#39ff14] border border-[#39ff14]/40 animate-pulse">
+              <Gamepad2 className="h-3.5 w-3.5" />
+              🎮 {connectedGamepadName.length > 20 ? connectedGamepadName.slice(0, 20) + '...' : connectedGamepadName}
+            </span>
+          ) : (
+            <button
+              onClick={() => setControlsModalOpen(true)}
+              className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-mono text-cyan-300/70 border border-[#00f0ff]/20 hover:border-[#00f0ff]/50 hover:text-white transition-colors cursor-pointer"
+            >
+              <Keyboard className="h-3.5 w-3.5 text-[#00f0ff]" />
+              <span className="hidden sm:inline">Keyboard Active</span>
+            </button>
+          )}
         </div>
 
         {/* Right Tools (Recording HUD + Quad Toggle) */}
@@ -326,7 +588,14 @@ export function EmulatorPlayer({
           <div
             ref={containerRef}
             id="emulator-container"
-            className={`bg-black aspect-[4/3] min-h-[60vh] md:min-h-[65vh] relative flex items-center justify-center ${
+            tabIndex={0}
+            onClick={() => {
+              containerRef.current?.focus();
+              setIsScreenFocused(true);
+            }}
+            onFocus={() => setIsScreenFocused(true)}
+            onBlur={() => setIsScreenFocused(false)}
+            className={`bg-black aspect-[4/3] min-h-[60vh] md:min-h-[65vh] relative flex items-center justify-center outline-none focus:ring-1 focus:ring-[#00f0ff]/50 cursor-pointer ${
               crtEnabled ? 'crt-overlay' : ''
             }`}
           >
@@ -339,6 +608,21 @@ export function EmulatorPlayer({
                   INITIALIZING {system} CORE &bull; 60 FPS
                 </div>
                 <div className="w-16 h-1 mx-auto bg-gradient-to-r from-[#00f0ff] via-[#ff7700] to-[#ff007f] rounded-full animate-pulse" />
+              </div>
+            )}
+
+            {/* Click to Focus Overlay Banner */}
+            {!isScreenFocused && emulatorReady && (
+              <div
+                onClick={(e) => {
+                  e.stopPropagation();
+                  containerRef.current?.focus();
+                  setIsScreenFocused(true);
+                }}
+                className="absolute bottom-4 left-1/2 -translate-x-1/2 z-50 cursor-pointer bg-black/85 backdrop-blur-md px-4 py-1.5 rounded-full border border-[#00f0ff]/60 text-xs font-mono text-[#00f0ff] animate-pulse flex items-center gap-2 shadow-[0_0_20px_rgba(0,240,255,0.5)]"
+              >
+                <Keyboard className="h-3.5 w-3.5" />
+                <span>Click screen to activate keyboard / gamepad controls</span>
               </div>
             )}
 
@@ -355,7 +639,10 @@ export function EmulatorPlayer({
               <Button
                 size="icon"
                 variant="secondary"
-                onClick={toggleMute}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleMute();
+                }}
                 className="bg-black/70 border border-white/10 hover:bg-black/90 text-white"
               >
                 {isMuted ? <VolumeX className="h-4 w-4 text-red-400" /> : <Volume2 className="h-4 w-4 text-[#00f0ff]" />}
@@ -383,6 +670,17 @@ export function EmulatorPlayer({
 
               {/* Controls */}
               <div className="flex items-center gap-2 flex-wrap">
+                {/* Controls Guide Modal Button */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setControlsModalOpen(true)}
+                  className="h-8 font-mono text-xs gap-1.5 bg-[#0f1738] border-[#00f0ff]/40 text-cyan-300 hover:text-white"
+                >
+                  <Gamepad2 className="h-3.5 w-3.5 text-[#00f0ff]" />
+                  Controls Guide
+                </Button>
+
                 {/* CRT Scanline Toggle */}
                 <Button
                   variant="outline"
@@ -418,6 +716,14 @@ export function EmulatorPlayer({
         onClose={() => setRecordingModalOpen(false)}
         recording={recordingResult}
         gameTitle={gameName}
+      />
+
+      {/* Interactive Controls Guide Modal */}
+      <ControlsGuideModal
+        isOpen={controlsModalOpen}
+        onClose={() => setControlsModalOpen(false)}
+        system={system}
+        gamepadName={connectedGamepadName}
       />
     </div>
   );
