@@ -731,23 +731,29 @@ export function EmulatorPlayer({
         />
       ) : (
         <Card className="overflow-hidden border border-[#00f0ff]/30 bg-[#070914] shadow-[0_0_40px_rgba(0,0,0,0.8)]">
-          {/* Emulator Screen */}
+          {/* Screen Outer Wrapper */}
           <div
-            ref={containerRef}
-            id="emulator-container"
-            tabIndex={0}
-            onClick={() => {
-              containerRef.current?.focus();
-              setIsScreenFocused(true);
-            }}
-            onFocus={() => setIsScreenFocused(true)}
-            onBlur={() => setIsScreenFocused(false)}
-            className={`bg-black aspect-[4/3] min-h-[60vh] md:min-h-[65vh] relative flex items-center justify-center outline-none focus:ring-1 focus:ring-[#00f0ff]/50 cursor-pointer ${
+            className={`bg-black aspect-[4/3] min-h-[60vh] md:min-h-[65vh] relative flex items-center justify-center ${
               crtEnabled ? 'crt-overlay' : ''
             }`}
           >
+            {/* Pure DOM Mount Point for EmulatorJS - Absolutely NO React children inside! */}
+            <div
+              ref={containerRef}
+              id="emulator-container"
+              tabIndex={0}
+              onClick={() => {
+                containerRef.current?.focus();
+                setIsScreenFocused(true);
+              }}
+              onFocus={() => setIsScreenFocused(true)}
+              onBlur={() => setIsScreenFocused(false)}
+              className="absolute inset-0 w-full h-full outline-none focus:ring-1 focus:ring-[#00f0ff]/50 cursor-pointer"
+            />
+
+            {/* Sibling React Overlays - Fully isolated from EmulatorJS DOM tree */}
             {!emulatorReady && (
-              <div className="relative z-10 text-center space-y-4">
+              <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/90 pointer-events-none space-y-4">
                 <div className="text-4xl md:text-5xl font-display font-extrabold text-[#00f0ff] neon-glow-blue uppercase">
                   {gameName}
                 </div>
@@ -766,7 +772,7 @@ export function EmulatorPlayer({
                   containerRef.current?.focus();
                   setIsScreenFocused(true);
                 }}
-                className="absolute bottom-4 left-1/2 -translate-x-1/2 z-50 cursor-pointer bg-black/85 backdrop-blur-md px-4 py-1.5 rounded-full border border-[#00f0ff]/60 text-xs font-mono text-[#00f0ff] animate-pulse flex items-center gap-2 shadow-[0_0_20px_rgba(0,240,255,0.5)]"
+                className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 cursor-pointer bg-black/85 backdrop-blur-md px-4 py-1.5 rounded-full border border-[#00f0ff]/60 text-xs font-mono text-[#00f0ff] animate-pulse flex items-center gap-2 shadow-[0_0_20px_rgba(0,240,255,0.5)]"
               >
                 <Keyboard className="h-3.5 w-3.5" />
                 <span>Click screen to activate keyboard / gamepad controls</span>
@@ -775,14 +781,14 @@ export function EmulatorPlayer({
 
             {/* In-game Recording Indicator */}
             {isRecording && (
-              <div className="absolute top-4 left-4 z-50 flex items-center gap-2 bg-black/80 backdrop-blur-md px-3 py-1 rounded-full border border-[#ff007f]/50">
+              <div className="absolute top-4 left-4 z-30 flex items-center gap-2 bg-black/80 backdrop-blur-md px-3 py-1 rounded-full border border-[#ff007f]/50">
                 <span className="w-2.5 h-2.5 rounded-full bg-[#ff007f] animate-ping" />
                 <span className="text-xs font-mono font-bold text-white">REC {recordingElapsed}</span>
               </div>
             )}
 
             {/* Audio Mute in Screen Corner */}
-            <div className="absolute top-4 right-4 z-50">
+            <div className="absolute top-4 right-4 z-30">
               <Button
                 size="icon"
                 variant="secondary"
