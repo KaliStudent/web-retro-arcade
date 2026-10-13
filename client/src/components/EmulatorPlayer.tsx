@@ -292,10 +292,12 @@ export function EmulatorPlayer({
           }
           // Alternative WASD D-Pad:
           if (e.keyCode === 87) emu.gameManager?.simulateInput(0, 4, 1); // W -> Up
+          if (e.keyCode === 83) emu.gameManager?.simulateInput(0, 5, 1); // S -> Down
+          if (e.keyCode === 65) emu.gameManager?.simulateInput(0, 6, 1); // A -> Left
           if (e.keyCode === 68) emu.gameManager?.simulateInput(0, 7, 1); // D -> Right
           // Alternative J / K:
-          if (e.keyCode === 74) emu.gameManager?.simulateInput(0, 8, 1); // J -> B
-          if (e.keyCode === 75) emu.gameManager?.simulateInput(0, 0, 1); // K -> A
+          if (e.keyCode === 74) emu.gameManager?.simulateInput(0, 0, 1); // J -> B
+          if (e.keyCode === 75) emu.gameManager?.simulateInput(0, 8, 1); // K -> A
 
           // Only forward to keyChange if the event did not hit container directly
           const isTargetingContainer =
@@ -315,9 +317,11 @@ export function EmulatorPlayer({
           emu.gameManager?.simulateInput(0, 2, 0);
         }
         if (e.keyCode === 87) emu.gameManager?.simulateInput(0, 4, 0);
+        if (e.keyCode === 83) emu.gameManager?.simulateInput(0, 5, 0);
+        if (e.keyCode === 65) emu.gameManager?.simulateInput(0, 6, 0);
         if (e.keyCode === 68) emu.gameManager?.simulateInput(0, 7, 0);
-        if (e.keyCode === 74) emu.gameManager?.simulateInput(0, 8, 0);
-        if (e.keyCode === 75) emu.gameManager?.simulateInput(0, 0, 0);
+        if (e.keyCode === 74) emu.gameManager?.simulateInput(0, 0, 0);
+        if (e.keyCode === 75) emu.gameManager?.simulateInput(0, 8, 0);
 
         const isTargetingContainer =
           e.target === containerRef.current || containerRef.current?.contains(e.target as Node);
@@ -477,6 +481,22 @@ export function EmulatorPlayer({
       (window as any).EJS_gameName = gameName;
       (window as any).EJS_color = '#00f0ff';
       (window as any).EJS_pathtodata = 'https://cdn.emulatorjs.org/stable/data/';
+      (window as any).EJS_defaultControls = {
+        0: {
+          0: { value: 'x', value2: 'BUTTON_2' },
+          1: { value: 'z', value2: 'BUTTON_1' },
+          2: { value: 'Shift', value2: 'SELECT' },
+          3: { value: 'Enter', value2: 'START' },
+          4: { value: 'ArrowUp', value2: 'DPAD_UP' },
+          5: { value: 'ArrowDown', value2: 'DPAD_DOWN' },
+          6: { value: 'ArrowLeft', value2: 'DPAD_LEFT' },
+          7: { value: 'ArrowRight', value2: 'DPAD_RIGHT' },
+          8: { value: 's', value2: 'BUTTON_4' },
+          9: { value: 'a', value2: 'BUTTON_3' },
+          10: { value: 'q', value2: 'BUTTON_5' },
+          11: { value: 'e', value2: 'BUTTON_6' },
+        }
+      };
 
       let resolvedUrl = gameUrl;
       if (!resolvedUrl) {
