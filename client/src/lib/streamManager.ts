@@ -4,6 +4,9 @@
  * single-streamer queues, and 4-way Quad Split Arena
  */
 
+import { whipClient } from './whipClient';
+import { executeRecaptcha } from './recaptcha';
+
 export type StreamMode = 'SOLO' | 'STREAMING';
 
 export type QueueState = 'LIVE' | 'STANDBY' | 'QUAD' | 'OFFLINE';
@@ -42,6 +45,7 @@ class StreamManager {
   private frameSyncInterval: any = null;
   private listeners: Listener[] = [];
   private attachedCanvas: HTMLCanvasElement | null = null;
+  private isWhipActive: boolean = false;
 
   private state: StreamState = {
     mode: 'SOLO',
@@ -98,6 +102,9 @@ class StreamManager {
 
   public attachCanvas(canvas: HTMLCanvasElement | null) {
     this.attachedCanvas = canvas;
+    if (canvas && this.state.queueState === 'LIVE' && !this.isWhipActive) {
+      this.startLiveBroadcast();
+    }
   }
 
   /**
@@ -177,6 +184,7 @@ class StreamManager {
           totalInQueue: data.totalInQueue || 1,
           activeStreamerName: this.username,
         });
+        this.startLiveBroadcast();
         break;
 
       case 'STANDBY_QUEUE':
@@ -185,6 +193,7 @@ class StreamManager {
           position: data.position,
           activeStreamerName: data.activeStreamerName,
         });
+        this.stopLiveBroadcast();
         break;
 
       case 'QUAD_ASSIGNMENT':
@@ -211,6 +220,7 @@ class StreamManager {
               activeStreamerName: this.username,
               totalInQueue: 1 + (queue ? queue.length : 0),
             });
+            this.startLiveBroadcast();
           } else if (activeStreamer) {
             const myIndex = queue ? queue.findIndex((p: any) => p.id === this.userId) : -1;
             this.updateState({
@@ -219,6 +229,7 @@ class StreamManager {
               activeStreamerName: activeStreamer.username,
               totalInQueue: 1 + (queue ? queue.length : 0),
             });
+            this.stopLiveBroadcast();
           }
         }
         break;
@@ -236,6 +247,57 @@ class StreamManager {
     }
   }
 
+  /**
+   * Starts live broadcast via Cloudflare Stream WHIP (guarded by reCAPTCHA v3)
+   */
+  private async startLiveBroadcast() {
+    if (this.isWhipActive) return;
+    this.isWhipActive = true;
+
+    try {
+      // 1. Obtain reCAPTCHA v3 token
+      const { token } = await executeRecaptcha('stream_broadcast');
+
+      // 2. Provision WHIP session from Cloudflare exterior pipeline
+      const workerUrl = (import.meta as any).env?.VITE_WORKER_URL;
+      const endpoint = workerUrl ? `${workerUrl.replace(/\/$/, '')}/api/stream/whip-session` : '/api/stream/whip-session';
+
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: this.userId,
+          username: this.username,
+          gameTitle: this.currentGameTitle,
+          system: this.currentSystem,
+          recaptchaToken: token,
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.twitchChannel) {
+          this.updateState({ twitchChannel: data.twitchChannel });
+        }
+
+        // 3. If real Cloudflare Stream WHIP URL is returned, establish WebRTC
+        if (data.whipUrl && data.mode === 'cloudflare_stream_live' && this.attachedCanvas) {
+          console.log('[StreamManager] Connecting 60 FPS WebRTC WHIP broadcast to Cloudflare Stream Live...');
+          await whipClient.start(this.attachedCanvas, data.whipUrl);
+        } else {
+          console.log('[StreamManager] Live arcade broadcast active (Simulated / Mesh mode)');
+        }
+      }
+    } catch (err) {
+      console.warn('[StreamManager] Live broadcast provisioning notice:', err);
+    }
+  }
+
+  private async stopLiveBroadcast() {
+    this.isWhipActive = false;
+    await whipClient.stop();
+  }
+
   private send(data: any) {
     if (this.socket && this.socket.readyState === WebSocket.OPEN) {
       this.socket.send(JSON.stringify(data));
@@ -244,6 +306,7 @@ class StreamManager {
 
   public leaveQueue() {
     this.stopIntervals();
+    this.stopLiveBroadcast();
     if (this.socket && this.socket.readyState === WebSocket.OPEN) {
       this.send({ type: 'LEAVE_QUEUE', userId: this.userId });
       this.socket.close();
@@ -303,6 +366,7 @@ class StreamManager {
       activeStreamerName: this.username,
       twitchChannel: 'NeonArcadeLive',
     });
+    this.startLiveBroadcast();
   }
 
   /**

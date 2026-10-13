@@ -7,3 +7,5 @@ uploads/roms/*
 !uploads/roms/.gitkeep
 .DS_Store
 *.log
+cloudflare-worker/src/*.js
+cloudflare-worker/dist/

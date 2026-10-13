@@ -114,6 +114,52 @@ app.post("/api/recaptcha/verify", async (req, res) => {
   }
 });
 
+// Cloudflare exterior pipeline & stream WHIP routes (Guarded by reCAPTCHA v3)
+app.post("/api/stream/whip-session", async (req, res) => {
+  try {
+    const { userId, username, gameTitle, recaptchaToken } = req.body;
+    const clientIp = req.headers['x-forwarded-for'] || req.socket?.remoteAddress;
+
+    // Verify reCAPTCHA token against bot abuse
+    const recaptchaResult = await verifyRecaptcha(recaptchaToken, clientIp);
+    if (!recaptchaResult.success) {
+      return res.status(403).json({
+        error: 'reCAPTCHA verification failed. Bot detected.',
+        details: recaptchaResult.details || recaptchaResult.error
+      });
+    }
+
+    const workerUrl = process.env.CLOUDFLARE_WORKER_URL;
+    if (workerUrl) {
+      // Forward to exterior Cloudflare pipeline
+      try {
+        const workerRes = await fetch(`${workerUrl.replace(/\/$/, '')}/api/stream/whip-session`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(req.body),
+        });
+        const data = await workerRes.json();
+        return res.status(workerRes.status).json(data);
+      } catch (proxyErr) {
+        console.warn('[Pipeline] Exterior Cloudflare Worker unreachable, using fallback:', proxyErr);
+      }
+    }
+
+    // Default arcade simulation response
+    res.json({
+      success: true,
+      mode: 'arcade_mesh_simulated',
+      whipUrl: `/api/stream/simulated-whip`,
+      twitchChannel: process.env.TWITCH_CHANNEL_NAME || 'NeonArcadeLive',
+      message: 'Running in Arcade Arena Mode with client canvas relay and queue management',
+      isSimulation: true,
+      recaptchaScore: recaptchaResult.score,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Failed to provision stream session' });
+  }
+});
+
 // Game routes
 app.get("/api/games", async (req, res) => {
   try {
