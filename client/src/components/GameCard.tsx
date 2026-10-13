@@ -2,7 +2,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Play, Heart, Trash2, Tv } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 interface GameCardProps {
   id: string;
@@ -38,6 +38,10 @@ export function GameCard({
 }: GameCardProps) {
   const [isFavorite, setIsFavorite] = useState(initialFavorite);
   const [isHovered, setIsHovered] = useState(false);
+
+  useEffect(() => {
+    setIsFavorite(initialFavorite);
+  }, [initialFavorite]);
 
   const handleToggleFavorite = (e: React.MouseEvent) => {
     e.stopPropagation();

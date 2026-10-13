@@ -24,6 +24,121 @@ export interface IStorage {
   updateSettings(updates: Partial<InsertSettings>): Promise<Settings>;
 }
 
+export const DEFAULT_GAMES: Array<Omit<Game, "createdAt">> = [
+  {
+    id: "nes-invaders",
+    title: "Space Invaders Deluxe",
+    system: "NES",
+    romFileName: "invaders.nes",
+    romFilePath: "/roms/invaders.nes",
+    fileSize: 32784,
+    coverImage: "/covers/invaders.png",
+    isFavorite: true,
+    lastPlayed: new Date(Date.now() - 3600000),
+  },
+  {
+    id: "nes-flappybird",
+    title: "Flappy Bird 8-Bit",
+    system: "NES",
+    romFileName: "flappybird.nes",
+    romFilePath: "/roms/flappybird.nes",
+    fileSize: 24592,
+    coverImage: "/covers/flappybird.png",
+    isFavorite: true,
+    lastPlayed: new Date(Date.now() - 7200000),
+  },
+  {
+    id: "nes-driar",
+    title: "Driar Arcade Adventure",
+    system: "NES",
+    romFileName: "driar.nes",
+    romFilePath: "/roms/driar.nes",
+    fileSize: 131088,
+    coverImage: "/covers/driar.png",
+    isFavorite: false,
+    lastPlayed: null,
+  },
+  {
+    id: "nes-blaster",
+    title: "Blaster Master Retro",
+    system: "NES",
+    romFileName: "blaster.nes",
+    romFilePath: "/roms/blaster.nes",
+    fileSize: 24592,
+    coverImage: "/covers/blaster.png",
+    isFavorite: false,
+    lastPlayed: null,
+  },
+  {
+    id: "nes-bombarray",
+    title: "Bomb Array Strategy",
+    system: "NES",
+    romFileName: "bombarray.nes",
+    romFilePath: "/roms/bombarray.nes",
+    fileSize: 16400,
+    coverImage: "/covers/bombarray.png",
+    isFavorite: false,
+    lastPlayed: null,
+  },
+  {
+    id: "nes-babelblox",
+    title: "Babel Blox Puzzle",
+    system: "NES",
+    romFileName: "babelblox.nes",
+    romFilePath: "/roms/babelblox.nes",
+    fileSize: 524304,
+    coverImage: "/covers/babelblox.png",
+    isFavorite: false,
+    lastPlayed: null,
+  },
+  {
+    id: "snes-astrohawk",
+    title: "Astro Hawk 16-Bit",
+    system: "SNES",
+    romFileName: "astrohawk.smc",
+    romFilePath: "/roms/astrohawk.smc",
+    fileSize: 786944,
+    coverImage: "/covers/astrohawk.png",
+    isFavorite: true,
+    lastPlayed: new Date(Date.now() - 14400000),
+  },
+  {
+    id: "gba-anguna",
+    title: "Anguna: Demonic Lord",
+    system: "GBA",
+    romFileName: "anguna.gba",
+    romFilePath: "/roms/anguna.gba",
+    fileSize: 1710888,
+    coverImage: "/covers/anguna.png",
+    isFavorite: true,
+    lastPlayed: null,
+  },
+  {
+    id: "gba-asteroidsb",
+    title: "Asteroids 32-Bit Enhanced",
+    system: "GBA",
+    romFileName: "asteroidsb.gba",
+    romFilePath: "/roms/asteroidsb.gba",
+    fileSize: 80240,
+    coverImage: "/covers/asteroidsb.png",
+    isFavorite: false,
+    lastPlayed: null,
+  },
+  {
+    id: "genesis-barbarian",
+    title: "Barbarian Arcade Action",
+    system: "Genesis",
+    romFileName: "barbarian.bin",
+    romFilePath: "/roms/barbarian.bin",
+    fileSize: 2296122,
+    coverImage: "/covers/barbarian.png",
+    isFavorite: false,
+    lastPlayed: null,
+  },
+];
+
+export const DEFAULT_GAME_IDS = new Set(DEFAULT_GAMES.map(g => g.id));
+
 export class MemStorage implements IStorage {
   private users: Map<string, User>;
   private games: Map<string, Game>;
@@ -49,128 +164,17 @@ export class MemStorage implements IStorage {
     };
 
     // Seed built-in homebrew & public domain classic retro games
-    this.seedDefaultGames();
+    this.ensureDefaultGames();
   }
 
-  private seedDefaultGames() {
-    const defaultGames: Array<Omit<Game, "createdAt">> = [
-      {
-        id: "nes-invaders",
-        title: "Space Invaders Deluxe",
-        system: "NES",
-        romFileName: "invaders.nes",
-        romFilePath: "/roms/invaders.nes",
-        fileSize: 32784,
-        coverImage: "/covers/invaders.png",
-        isFavorite: true,
-        lastPlayed: new Date(Date.now() - 3600000),
-      },
-      {
-        id: "nes-flappybird",
-        title: "Flappy Bird 8-Bit",
-        system: "NES",
-        romFileName: "flappybird.nes",
-        romFilePath: "/roms/flappybird.nes",
-        fileSize: 24592,
-        coverImage: "/covers/flappybird.png",
-        isFavorite: true,
-        lastPlayed: new Date(Date.now() - 7200000),
-      },
-      {
-        id: "nes-driar",
-        title: "Driar Arcade Adventure",
-        system: "NES",
-        romFileName: "driar.nes",
-        romFilePath: "/roms/driar.nes",
-        fileSize: 131088,
-        coverImage: "/covers/driar.png",
-        isFavorite: false,
-        lastPlayed: null,
-      },
-      {
-        id: "nes-blaster",
-        title: "Blaster Master Retro",
-        system: "NES",
-        romFileName: "blaster.nes",
-        romFilePath: "/roms/blaster.nes",
-        fileSize: 24592,
-        coverImage: "/covers/blaster.png",
-        isFavorite: false,
-        lastPlayed: null,
-      },
-      {
-        id: "nes-bombarray",
-        title: "Bomb Array Strategy",
-        system: "NES",
-        romFileName: "bombarray.nes",
-        romFilePath: "/roms/bombarray.nes",
-        fileSize: 16400,
-        coverImage: "/covers/bombarray.png",
-        isFavorite: false,
-        lastPlayed: null,
-      },
-      {
-        id: "nes-babelblox",
-        title: "Babel Blox Puzzle",
-        system: "NES",
-        romFileName: "babelblox.nes",
-        romFilePath: "/roms/babelblox.nes",
-        fileSize: 524304,
-        coverImage: "/covers/babelblox.png",
-        isFavorite: false,
-        lastPlayed: null,
-      },
-      {
-        id: "snes-astrohawk",
-        title: "Astro Hawk 16-Bit",
-        system: "SNES",
-        romFileName: "astrohawk.smc",
-        romFilePath: "/roms/astrohawk.smc",
-        fileSize: 786944,
-        coverImage: "/covers/astrohawk.png",
-        isFavorite: true,
-        lastPlayed: new Date(Date.now() - 14400000),
-      },
-      {
-        id: "gba-anguna",
-        title: "Anguna: Demonic Lord",
-        system: "GBA",
-        romFileName: "anguna.gba",
-        romFilePath: "/roms/anguna.gba",
-        fileSize: 1710888,
-        coverImage: "/covers/anguna.png",
-        isFavorite: true,
-        lastPlayed: null,
-      },
-      {
-        id: "gba-asteroidsb",
-        title: "Asteroids 32-Bit Enhanced",
-        system: "GBA",
-        romFileName: "asteroidsb.gba",
-        romFilePath: "/roms/asteroidsb.gba",
-        fileSize: 80240,
-        coverImage: "/covers/asteroidsb.png",
-        isFavorite: false,
-        lastPlayed: null,
-      },
-      {
-        id: "genesis-barbarian",
-        title: "Barbarian Arcade Action",
-        system: "Genesis",
-        romFileName: "barbarian.bin",
-        romFilePath: "/roms/barbarian.bin",
-        fileSize: 2296122,
-        coverImage: "/covers/barbarian.png",
-        isFavorite: false,
-        lastPlayed: null,
-      },
-    ];
-
-    for (const g of defaultGames) {
-      this.games.set(g.id, {
-        ...g,
-        createdAt: new Date(),
-      });
+  public ensureDefaultGames() {
+    for (const g of DEFAULT_GAMES) {
+      if (!this.games.has(g.id)) {
+        this.games.set(g.id, {
+          ...g,
+          createdAt: new Date(),
+        });
+      }
     }
   }
 
@@ -194,12 +198,14 @@ export class MemStorage implements IStorage {
 
   // Game methods
   async getAllGames(): Promise<Game[]> {
+    this.ensureDefaultGames();
     return Array.from(this.games.values()).sort(
       (a, b) => b.createdAt.getTime() - a.createdAt.getTime()
     );
   }
 
   async getGameById(id: string): Promise<Game | undefined> {
+    this.ensureDefaultGames();
     const direct = this.games.get(id);
     if (direct) return direct;
 
@@ -215,18 +221,21 @@ export class MemStorage implements IStorage {
   }
 
   async getGamesBySystem(system: string): Promise<Game[]> {
+    this.ensureDefaultGames();
     return Array.from(this.games.values())
       .filter(game => game.system === system)
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   }
 
   async getFavoriteGames(): Promise<Game[]> {
+    this.ensureDefaultGames();
     return Array.from(this.games.values())
       .filter(game => game.isFavorite)
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   }
 
   async getRecentGames(limit: number = 10): Promise<Game[]> {
+    this.ensureDefaultGames();
     return Array.from(this.games.values())
       .filter(game => game.lastPlayed)
       .sort((a, b) => {
@@ -260,6 +269,10 @@ export class MemStorage implements IStorage {
   }
 
   async deleteGame(id: string): Promise<boolean> {
+    if (DEFAULT_GAME_IDS.has(id)) {
+      // Protected built-in games can never be deleted
+      return false;
+    }
     return this.games.delete(id);
   }
 

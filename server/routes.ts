@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
-import { storage } from "./storage";
+import { storage, DEFAULT_GAME_IDS } from "./storage";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
@@ -126,6 +126,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/games/:id/favorite", async (req, res) => {
     try {
+      if (req.params.id.startsWith('local_')) {
+        return res.json({ id: req.params.id, isFavorite: true });
+      }
       const game = await storage.toggleFavorite(req.params.id);
       if (!game) {
         return res.status(404).json({ error: 'Game not found' });
@@ -153,9 +156,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/games/:id", async (req, res) => {
     try {
+      if (req.params.id.startsWith('local_')) {
+        return res.json({ success: true });
+      }
+      if (DEFAULT_GAME_IDS.has(req.params.id)) {
+        return res.status(403).json({ error: 'Built-in arcade games cannot be deleted' });
+      }
       const deleted = await storage.deleteGame(req.params.id);
       if (!deleted) {
-        return res.status(404).json({ error: 'Game not found' });
+        return res.status(404).json({ error: 'Game not found or protected' });
       }
       res.json({ success: true });
     } catch (error) {

@@ -112,6 +112,20 @@ class LocalStorageDB {
     });
   }
 
+  async toggleFavorite(id: string): Promise<boolean> {
+    try {
+      if (!this.db) await this.init();
+      const rom = await this.getROMById(id);
+      if (!rom) return false;
+      const newFavorite = !rom.isFavorite;
+      await this.updateROM(id, { isFavorite: newFavorite });
+      return newFavorite;
+    } catch (e) {
+      console.warn('Failed to toggle favorite in localDB:', e);
+      return false;
+    }
+  }
+
   async updateLastPlayed(id: string): Promise<void> {
     try {
       await this.updateROM(id, { lastPlayed: new Date() });

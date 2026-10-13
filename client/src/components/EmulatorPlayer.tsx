@@ -60,7 +60,7 @@ function installEmulatorPatches() {
     if (!(origRequestPointerLock as any)._patched) {
       const patched = function (this: HTMLCanvasElement, ...args: any[]) {
         try {
-          const res = origRequestPointerLock.apply(this, args);
+          const res = (origRequestPointerLock as any).apply(this, args);
           if (res && typeof (res as any).catch === 'function') {
             (res as any).catch(() => {
               // Suppress PointerLock SecurityError gracefully
@@ -72,7 +72,7 @@ function installEmulatorPatches() {
         }
       };
       (patched as any)._patched = true;
-      HTMLCanvasElement.prototype.requestPointerLock = patched;
+      HTMLCanvasElement.prototype.requestPointerLock = patched as any;
     }
   }
 

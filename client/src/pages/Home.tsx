@@ -30,6 +30,7 @@ import {
   Play,
   Grid2X2,
   Tv,
+  Trash2,
 } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { getAllGames, toggleFavorite, deleteGame, updateLastPlayed } from "@/lib/api";
@@ -39,6 +40,19 @@ import { streamManager, type StreamMode } from "@/lib/streamManager";
 import { localDB } from "@/lib/localStorageDB";
 import { useEffect } from "react";
 import type { Game } from "@shared/schema";
+
+const DEFAULT_GAME_IDS = new Set([
+  'nes-invaders',
+  'nes-flappybird',
+  'nes-driar',
+  'nes-blaster',
+  'nes-bombarray',
+  'nes-babelblox',
+  'snes-astrohawk',
+  'gba-anguna',
+  'gba-asteroidsb',
+  'genesis-barbarian',
+]);
 
 const systems = [
   { id: 'nes', name: 'NES', formats: ['.nes'] },
@@ -119,6 +133,61 @@ export default function Home() {
       toast({ title: "Game deleted" });
     },
   });
+
+  const handleToggleFavorite = async (game: Game) => {
+    if (game.id.startsWith('local_')) {
+      try {
+        const newFav = await localDB.toggleFavorite(game.id);
+        setLocalGames((prev) =>
+          prev.map((g) => (g.id === game.id ? { ...g, isFavorite: newFav } : g))
+        );
+        toast({
+          title: newFav ? "Added to favorites" : "Removed from favorites",
+        });
+      } catch (err) {
+        console.error('Failed to toggle favorite locally:', err);
+      }
+    } else {
+      toggleFavoriteMutation.mutate(game.id);
+    }
+  };
+
+  const handleDeleteGame = async (game: Game) => {
+    if (DEFAULT_GAME_IDS.has(game.id)) {
+      toast({
+        title: "Protected Title",
+        description: "Built-in retro games cannot be deleted.",
+      });
+      return;
+    }
+
+    if (!window.confirm(`Are you sure you want to delete "${game.title}" from your library?`)) {
+      return;
+    }
+
+    if (game.id.startsWith('local_')) {
+      try {
+        await localDB.deleteROM(game.id);
+        if (game.romFilePath && game.romFilePath.startsWith('blob:')) {
+          URL.revokeObjectURL(game.romFilePath);
+        }
+        setLocalGames((prev) => prev.filter((g) => g.id !== game.id));
+        toast({
+          title: "Custom ROM Deleted",
+          description: `"${game.title}" was removed from your local arcade library.`,
+        });
+      } catch (err) {
+        console.error('Failed to delete local ROM:', err);
+        toast({
+          title: "Delete Failed",
+          description: "Could not remove ROM from browser storage.",
+          variant: "destructive",
+        });
+      }
+    } else {
+      deleteGameMutation.mutate(game.id);
+    }
+  };
 
   const updateLastPlayedMutation = useMutation({
     mutationFn: updateLastPlayed,
@@ -420,8 +489,8 @@ export default function Home() {
                     lastPlayed={formatLastPlayed(game.lastPlayed)}
                     isFavorite={game.isFavorite}
                     onPlay={() => handleInitiatePlay(game)}
-                    onToggleFavorite={() => toggleFavoriteMutation.mutate(game.id)}
-                    onDelete={() => deleteGameMutation.mutate(game.id)}
+                    onToggleFavorite={() => handleToggleFavorite(game)}
+                    onDelete={!DEFAULT_GAME_IDS.has(game.id) ? () => handleDeleteGame(game) : undefined}
                   />
                 ) : (
                   <div
@@ -452,6 +521,32 @@ export default function Home() {
                         <span className="text-xs text-cyan-200/50 hidden sm:inline">
                           {formatLastPlayed(game.lastPlayed)}
                         </span>
+                      )}
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleToggleFavorite(game);
+                        }}
+                        className={`h-8 w-8 ${game.isFavorite ? "text-[#ff007f]" : "text-white/60 hover:text-white"}`}
+                        title="Toggle Favorite"
+                      >
+                        <Star className={`h-4 w-4 ${game.isFavorite ? "fill-current" : ""}`} />
+                      </Button>
+                      {!DEFAULT_GAME_IDS.has(game.id) && (
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteGame(game);
+                          }}
+                          className="h-8 w-8 text-white/50 hover:text-red-400 hover:bg-red-950/40"
+                          title="Delete ROM"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
                       )}
                       <Button
                         size="sm"

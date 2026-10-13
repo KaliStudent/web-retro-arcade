@@ -1,6 +1,6 @@
 import express from 'express';
 import { createServer } from 'http';
-import { storage } from '../server/storage.js';
+import { storage, DEFAULT_GAME_IDS } from '../server/storage.js';
 import multer from 'multer';
 import path from 'path';
 import { insertGameSchema, insertSettingsSchema } from '../shared/schema.js';
@@ -107,6 +107,9 @@ app.post("/api/games/upload", upload.single('rom'), async (req, res) => {
 
 app.patch("/api/games/:id/favorite", async (req, res) => {
   try {
+    if (req.params.id.startsWith('local_')) {
+      return res.json({ id: req.params.id, isFavorite: true });
+    }
     const game = await storage.toggleFavorite(req.params.id);
     if (!game) {
       return res.status(404).json({ error: 'Game not found' });
@@ -120,6 +123,9 @@ app.patch("/api/games/:id/favorite", async (req, res) => {
 
 app.patch("/api/games/:id/play", async (req, res) => {
   try {
+    if (req.params.id.startsWith('local_')) {
+      return res.json({ id: req.params.id, lastPlayed: new Date() });
+    }
     const game = await storage.updateLastPlayed(req.params.id);
     if (!game) {
       return res.status(404).json({ error: 'Game not found' });
@@ -133,9 +139,15 @@ app.patch("/api/games/:id/play", async (req, res) => {
 
 app.delete("/api/games/:id", async (req, res) => {
   try {
+    if (req.params.id.startsWith('local_')) {
+      return res.json({ success: true });
+    }
+    if (DEFAULT_GAME_IDS && DEFAULT_GAME_IDS.has(req.params.id)) {
+      return res.status(403).json({ error: 'Built-in arcade games cannot be deleted' });
+    }
     const deleted = await storage.deleteGame(req.params.id);
     if (!deleted) {
-      return res.status(404).json({ error: 'Game not found' });
+      return res.status(404).json({ error: 'Game not found or protected' });
     }
     res.json({ success: true });
   } catch (error) {
