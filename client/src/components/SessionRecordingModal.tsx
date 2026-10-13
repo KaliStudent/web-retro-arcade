@@ -6,8 +6,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Download, Share2, Copy, Check, ExternalLink, Video, Clock, HardDrive, Gamepad2 } from "lucide-react";
-import { useState } from "react";
+import { Download, Video, Clock, HardDrive } from "lucide-react";
 import { type RecordingResult, videoRecorder } from "@/lib/videoRecorder";
 import { useToast } from "@/hooks/use-toast";
 
@@ -24,7 +23,6 @@ export function SessionRecordingModal({
   recording,
   gameTitle,
 }: SessionRecordingModalProps) {
-  const [copied, setCopied] = useState(false);
   const { toast } = useToast();
 
   if (!recording) return null;
@@ -35,30 +33,6 @@ export function SessionRecordingModal({
       title: "Download Started",
       description: `Saved ${recording.filename} (${recording.sizeFormatted})`,
     });
-  };
-
-  const handleCopyLink = () => {
-    navigator.clipboard.writeText(window.location.href);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-    toast({
-      title: "Link Copied",
-      description: "Arcade session link copied to clipboard!",
-    });
-  };
-
-  const shareToTwitter = () => {
-    const text = encodeURIComponent(
-      `Check out my ${recording.durationFormatted} retro gameplay run of ${gameTitle} on Web Retro Arcade! 🎮🕹️`
-    );
-    const url = encodeURIComponent(window.location.href);
-    window.open(`https://twitter.com/intent/tweet?text=${text}&url=${url}`, '_blank');
-  };
-
-  const shareToReddit = () => {
-    const title = encodeURIComponent(`Retro Arcade Gameplay: ${gameTitle} (${recording.durationFormatted})`);
-    const url = encodeURIComponent(window.location.href);
-    window.open(`https://www.reddit.com/submit?url=${url}&title=${title}`, '_blank');
   };
 
   return (
@@ -77,7 +51,7 @@ export function SessionRecordingModal({
             {gameTitle} - Gameplay Recording
           </DialogTitle>
           <DialogDescription className="text-sm text-pink-200/70">
-            Your private gameplay session has been encoded and ready for playback or export.
+            Your private gameplay session has been encoded and is ready for playback or download.
           </DialogDescription>
         </DialogHeader>
 
@@ -115,8 +89,8 @@ export function SessionRecordingModal({
             </div>
           </div>
 
-          {/* Download & Social Sharing */}
-          <div className="space-y-3">
+          {/* Download Action */}
+          <div className="space-y-2">
             <Button
               onClick={handleDownload}
               className="w-full font-display font-bold uppercase tracking-wider text-black bg-[#39ff14] hover:bg-[#30e210] shadow-[0_0_25px_rgba(57,255,20,0.5)] gap-2 py-6 text-base"
@@ -124,36 +98,9 @@ export function SessionRecordingModal({
               <Download className="h-5 w-5" />
               Download Gameplay Video (.webm)
             </Button>
-
-            <div className="grid grid-cols-3 gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={shareToTwitter}
-                className="bg-[#0e142e] border-[#00f0ff]/30 text-cyan-200 hover:text-white hover:bg-[#00f0ff]/20 font-mono text-xs gap-1.5"
-              >
-                <Share2 className="h-3.5 w-3.5 text-[#00f0ff]" />
-                Share on X
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={shareToReddit}
-                className="bg-[#0e142e] border-[#ff7700]/30 text-orange-200 hover:text-white hover:bg-[#ff7700]/20 font-mono text-xs gap-1.5"
-              >
-                <ExternalLink className="h-3.5 w-3.5 text-[#ff7700]" />
-                Share to Reddit
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleCopyLink}
-                className="bg-[#0e142e] border-[#ff007f]/30 text-pink-200 hover:text-white hover:bg-[#ff007f]/20 font-mono text-xs gap-1.5"
-              >
-                {copied ? <Check className="h-3.5 w-3.5 text-green-400" /> : <Copy className="h-3.5 w-3.5 text-[#ff007f]" />}
-                {copied ? "Copied!" : "Copy Link"}
-              </Button>
-            </div>
+            <p className="text-[11px] text-center font-mono text-cyan-200/50">
+              Session capture is stored locally in browser memory. Download the .webm file directly to your device.
+            </p>
           </div>
 
           {/* Footer close */}
