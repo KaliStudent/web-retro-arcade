@@ -112,6 +112,14 @@ class LocalStorageDB {
     });
   }
 
+  async updateLastPlayed(id: string): Promise<void> {
+    try {
+      await this.updateROM(id, { lastPlayed: new Date() });
+    } catch (e) {
+      console.warn('Failed to update last played in localDB:', e);
+    }
+  }
+
   async getFavorites(): Promise<LocalROM[]> {
     const allROMs = await this.getAllROMs();
     return allROMs.filter(rom => rom.isFavorite);

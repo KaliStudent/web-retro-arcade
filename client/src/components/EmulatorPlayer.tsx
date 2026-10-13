@@ -297,8 +297,10 @@ export function EmulatorPlayer({
           if (e.keyCode === 74) emu.gameManager?.simulateInput(0, 8, 1); // J -> B
           if (e.keyCode === 75) emu.gameManager?.simulateInput(0, 0, 1); // K -> A
 
-          // Standard EmulatorJS Key handler
-          if (typeof emu.keyChange === 'function') {
+          // Only forward to keyChange if the event did not hit container directly
+          const isTargetingContainer =
+            e.target === containerRef.current || containerRef.current?.contains(e.target as Node);
+          if (!isTargetingContainer && typeof emu.keyChange === 'function') {
             emu.keyChange(e);
           }
         }
@@ -317,7 +319,9 @@ export function EmulatorPlayer({
         if (e.keyCode === 74) emu.gameManager?.simulateInput(0, 8, 0);
         if (e.keyCode === 75) emu.gameManager?.simulateInput(0, 0, 0);
 
-        if (typeof emu.keyChange === 'function') {
+        const isTargetingContainer =
+          e.target === containerRef.current || containerRef.current?.contains(e.target as Node);
+        if (!isTargetingContainer && typeof emu.keyChange === 'function') {
           emu.keyChange(e);
         }
       }
@@ -536,6 +540,17 @@ export function EmulatorPlayer({
     };
 
     loadEmulatorJS();
+
+    return () => {
+      if ((window as any).EJS_emulator) {
+        try {
+          if (typeof (window as any).EJS_emulator.pause === 'function') {
+            (window as any).EJS_emulator.pause();
+          }
+        } catch (e) {}
+        (window as any).EJS_emulator = null;
+      }
+    };
   }, [gameId, gameName, system, isMuted]);
 
   // Handle Recording Toggle
@@ -579,6 +594,14 @@ export function EmulatorPlayer({
         setRecordingModalOpen(true);
         return;
       }
+    }
+    if ((window as any).EJS_emulator) {
+      try {
+        if (typeof (window as any).EJS_emulator.pause === 'function') {
+          (window as any).EJS_emulator.pause();
+        }
+      } catch (e) {}
+      (window as any).EJS_emulator = null;
     }
     if (onClose) onClose();
   };

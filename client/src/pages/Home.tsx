@@ -134,14 +134,21 @@ export default function Home() {
 
   const handleConfirmLaunch = (mode: StreamMode, username: string) => {
     if (!pendingGame) return;
+    const gameToLaunch = pendingGame;
     setActiveStreamMode(mode);
-    if (!pendingGame.id.startsWith('local_')) {
-      updateLastPlayedMutation.mutate(pendingGame.id);
-    } else {
-      localDB.updateLastPlayed(pendingGame.id);
-    }
-    setPlayingGame(pendingGame);
+    setActivePlayerName(username);
     setPendingGame(null);
+    setPlayingGame(gameToLaunch);
+
+    try {
+      if (!gameToLaunch.id.startsWith('local_')) {
+        updateLastPlayedMutation.mutate(gameToLaunch.id);
+      } else {
+        localDB.updateLastPlayed(gameToLaunch.id);
+      }
+    } catch (e) {
+      console.warn('Update last played notice:', e);
+    }
   };
 
   const systemCounts = systems.map(system => ({
