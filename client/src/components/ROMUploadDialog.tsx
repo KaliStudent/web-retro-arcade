@@ -9,8 +9,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Upload, CheckCircle2, Loader2 } from "lucide-react";
+import { Upload, CheckCircle2, Loader2, ShieldCheck, AlertCircle } from "lucide-react";
 import { localDB } from "@/lib/localStorageDB";
+import { executeRecaptcha, verifyRecaptchaToken } from "@/lib/recaptcha";
 
 interface ROMUploadDialogProps {
   onUploadComplete?: () => void;
@@ -32,12 +33,15 @@ export function ROMUploadDialog({ onUploadComplete }: ROMUploadDialogProps) {
   const [title, setTitle] = useState("");
   const [system, setSystem] = useState("");
   const [isUploading, setIsUploading] = useState(false);
+  const [isVerifying, setIsVerifying] = useState(false);
   const [uploadSuccess, setUploadSuccess] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       setSelectedFile(file);
+      setErrorMessage(null);
       // Auto-fill title from filename
       const nameWithoutExt = file.name.replace(/\.[^/.]+$/, "");
       setTitle(nameWithoutExt);
@@ -48,8 +52,22 @@ export function ROMUploadDialog({ onUploadComplete }: ROMUploadDialogProps) {
     if (!selectedFile || !title || !system) return;
 
     setIsUploading(true);
+    setIsVerifying(true);
+    setErrorMessage(null);
+
     try {
-      // 1. Save locally in browser IndexedDB (Guaranteed local play regardless of file size)
+      // 1. Obtain reCAPTCHA v3 token
+      const { token } = await executeRecaptcha('upload_rom');
+
+      // 2. Verify token on server
+      const verifyResult = await verifyRecaptchaToken(token, 'upload_rom');
+      if (!verifyResult.success) {
+        throw new Error(verifyResult.error || 'reCAPTCHA verification failed. Bot detected.');
+      }
+
+      setIsVerifying(false);
+
+      // 3. Save locally in browser IndexedDB (Guaranteed local play regardless of file size)
       const cleanTitle = title.trim();
       const localId = 'local_' + cleanTitle.toLowerCase().replace(/[^a-z0-9]/g, '_');
       const arrayBuffer = await selectedFile.arrayBuffer();
@@ -65,20 +83,31 @@ export function ROMUploadDialog({ onUploadComplete }: ROMUploadDialogProps) {
         isFavorite: false,
       });
 
-      // 2. Also attempt server sync if within Vercel's 4.5MB limit
+      // 4. Also attempt server sync if within Vercel's 4.5MB limit
       if (selectedFile.size <= 4.5 * 1024 * 1024) {
         try {
           const formData = new FormData();
           formData.append('rom', selectedFile);
           formData.append('title', title);
           formData.append('system', system);
+          formData.append('recaptchaToken', token);
 
-          await fetch('/api/games/upload', {
+          const res = await fetch('/api/games/upload', {
             method: 'POST',
             body: formData,
           });
-        } catch (serverErr) {
+
+          if (!res.ok) {
+            const errData = await res.json().catch(() => null);
+            if (res.status === 403) {
+              throw new Error(errData?.error || 'reCAPTCHA verification rejected by server.');
+            }
+          }
+        } catch (serverErr: any) {
           console.warn('Server upload sync notice (stored locally):', serverErr);
+          if (serverErr.message && serverErr.message.includes('reCAPTCHA')) {
+            throw serverErr;
+          }
         }
       }
 
@@ -91,15 +120,24 @@ export function ROMUploadDialog({ onUploadComplete }: ROMUploadDialogProps) {
         setSystem("");
         setUploadSuccess(false);
       }, 1000);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Upload error:', error);
+      setErrorMessage(error.message || 'Failed to complete upload');
     } finally {
+      setIsVerifying(false);
       setIsUploading(false);
     }
   };
 
   return (
     <div className="space-y-4">
+      {errorMessage && (
+        <div className="flex items-center gap-2 p-2.5 rounded-md border border-red-500/40 bg-red-950/30 text-xs text-red-400">
+          <AlertCircle className="w-4 h-4 shrink-0" />
+          <span>{errorMessage}</span>
+        </div>
+      )}
+
       <div className="space-y-2">
         <Label htmlFor="rom-file">ROM File</Label>
         <div className="flex gap-2">
@@ -145,13 +183,31 @@ export function ROMUploadDialog({ onUploadComplete }: ROMUploadDialogProps) {
         </Select>
       </div>
 
+      {/* Google reCAPTCHA v3 Compliance Notice */}
+      <div className="flex items-start gap-2 p-2.5 rounded-md border border-cyan-500/20 bg-cyan-950/20 text-xs text-muted-foreground">
+        <ShieldCheck className="w-4 h-4 text-cyan-400 mt-0.5 shrink-0" />
+        <div>
+          <span className="text-cyan-300 font-medium">Protected by Google reCAPTCHA v3</span>
+          <p className="text-[11px] text-muted-foreground mt-0.5">
+            Automated bot submissions are blocked. By uploading, you agree to Google's{" "}
+            <a href="https://policies.google.com/privacy" target="_blank" rel="noreferrer" className="text-cyan-400 hover:underline">Privacy Policy</a> and{" "}
+            <a href="https://policies.google.com/terms" target="_blank" rel="noreferrer" className="text-cyan-400 hover:underline">Terms of Service</a>.
+          </p>
+        </div>
+      </div>
+
       <Button
         onClick={handleUpload}
         disabled={!selectedFile || !title || !system || isUploading || uploadSuccess}
         className="w-full"
         data-testid="button-upload-submit"
       >
-        {isUploading ? (
+        {isVerifying ? (
+          <>
+            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            Verifying Security...
+          </>
+        ) : isUploading ? (
           <>
             <Loader2 className="h-4 w-4 mr-2 animate-spin" />
             Uploading...

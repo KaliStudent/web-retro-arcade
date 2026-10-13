@@ -39,6 +39,81 @@ const upload = multer({
   }
 });
 
+// Google reCAPTCHA v3 verification helper
+async function verifyRecaptcha(token, remoteIp) {
+  const secretKey = process.env.RECAPTCHA_SECRET_KEY;
+
+  // In test/demo mode or if RECAPTCHA_SECRET_KEY is not configured, bypass verification
+  if (!secretKey || secretKey === 'test' || secretKey === 'demo' || secretKey === 'mock') {
+    return { success: true, score: 1.0, isDemo: true };
+  }
+
+  if (!token) {
+    return { success: false, error: 'Missing reCAPTCHA token' };
+  }
+
+  try {
+    const params = new URLSearchParams();
+    params.append('secret', secretKey);
+    params.append('response', token);
+    if (remoteIp) {
+      params.append('remoteip', remoteIp);
+    }
+
+    const response = await fetch('https://www.google.com/recaptcha/api/siteverify', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: params.toString(),
+    });
+
+    const data = await response.json();
+    if (!data.success) {
+      return {
+        success: false,
+        error: 'reCAPTCHA verification failed',
+        details: data['error-codes'] || []
+      };
+    }
+
+    const minScore = parseFloat(process.env.RECAPTCHA_MIN_SCORE || '0.5');
+    if (typeof data.score === 'number' && data.score < minScore) {
+      return {
+        success: false,
+        score: data.score,
+        error: `Bot score ${data.score} below threshold ${minScore}`
+      };
+    }
+
+    return { success: true, score: data.score, action: data.action };
+  } catch (err) {
+    console.error('reCAPTCHA siteverify error:', err);
+    return { success: false, error: 'reCAPTCHA service communication error' };
+  }
+}
+
+// reCAPTCHA configuration & verification routes
+app.get("/api/recaptcha/site-key", (req, res) => {
+  const siteKey = process.env.VITE_RECAPTCHA_SITE_KEY || process.env.RECAPTCHA_SITE_KEY || '';
+  const isEnabled = Boolean(process.env.RECAPTCHA_SECRET_KEY && process.env.RECAPTCHA_SECRET_KEY !== 'test');
+  res.json({ siteKey, isEnabled, isDemo: !isEnabled });
+});
+
+app.post("/api/recaptcha/verify", async (req, res) => {
+  try {
+    const { token } = req.body;
+    const clientIp = req.headers['x-forwarded-for'] || req.socket?.remoteAddress;
+    const result = await verifyRecaptcha(token, clientIp);
+    if (!result.success) {
+      return res.status(403).json(result);
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Verification error' });
+  }
+});
+
 // Game routes
 app.get("/api/games", async (req, res) => {
   try {
@@ -68,10 +143,20 @@ app.post("/api/games/upload", upload.single('rom'), async (req, res) => {
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
-    const { title, system, sessionId } = req.body;
+    const { title, system, sessionId, recaptchaToken } = req.body;
 
     if (!title || !system) {
       return res.status(400).json({ error: 'Title and system are required' });
+    }
+
+    // Verify reCAPTCHA token against bot abuse
+    const clientIp = req.headers['x-forwarded-for'] || req.socket?.remoteAddress;
+    const recaptchaResult = await verifyRecaptcha(recaptchaToken, clientIp);
+    if (!recaptchaResult.success) {
+      return res.status(403).json({
+        error: 'reCAPTCHA verification failed. Bot detected.',
+        details: recaptchaResult.details || recaptchaResult.error
+      });
     }
 
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
