@@ -135,8 +135,11 @@ export default function Home() {
   const handleConfirmLaunch = (mode: StreamMode, username: string) => {
     if (!pendingGame) return;
     setActiveStreamMode(mode);
-    setActivePlayerName(username);
-    updateLastPlayedMutation.mutate(pendingGame.id);
+    if (!pendingGame.id.startsWith('local_')) {
+      updateLastPlayedMutation.mutate(pendingGame.id);
+    } else {
+      localDB.updateLastPlayed(pendingGame.id);
+    }
     setPlayingGame(pendingGame);
     setPendingGame(null);
   };

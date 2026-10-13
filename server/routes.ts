@@ -138,6 +138,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/games/:id/play", async (req, res) => {
     try {
+      if (req.params.id.startsWith('local_')) {
+        return res.json({ id: req.params.id, lastPlayed: new Date() });
+      }
       const game = await storage.updateLastPlayed(req.params.id);
       if (!game) {
         return res.status(404).json({ error: 'Game not found' });

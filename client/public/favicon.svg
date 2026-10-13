@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <rect width="64" height="64" rx="14" fill="#060814" />
+  <rect x="2" y="2" width="60" height="60" rx="12" fill="none" stroke="#00f0ff" stroke-width="2" />
+  <!-- D-Pad -->
+  <path d="M12 28h6v-6h6v6h6v6h-6v6h-6v-6h-6z" fill="#00f0ff" />
+  <!-- Action Buttons -->
+  <circle cx="48" cy="27" r="3.5" fill="#ff007f" />
+  <circle cx="41" cy="34" r="3.5" fill="#ff7700" />
+  <circle cx="48" cy="41" r="3.5" fill="#39ff14" />
+  <circle cx="55" cy="34" r="3.5" fill="#00f0ff" />
+  <!-- Screen Glow Accent -->
+  <line x1="8" y1="54" x2="56" y2="54" stroke="#ff007f" stroke-width="2" stroke-linecap="round" />
+</svg>

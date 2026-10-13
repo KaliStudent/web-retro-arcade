@@ -50,6 +50,144 @@ const SYSTEM_CORES: Record<string, string> = {
   'N64': 'n64',
 };
 
+// Install runtime safety patches for EmulatorJS, GamepadHandler, and PointerLock
+function installEmulatorPatches() {
+  if (typeof window === 'undefined') return;
+
+  // 1. Pointer Lock Safety (silences browser SecurityError when clicking canvas after lock exit)
+  if (typeof HTMLCanvasElement !== 'undefined' && HTMLCanvasElement.prototype.requestPointerLock) {
+    const origRequestPointerLock = HTMLCanvasElement.prototype.requestPointerLock;
+    if (!(origRequestPointerLock as any)._patched) {
+      const patched = function (this: HTMLCanvasElement, ...args: any[]) {
+        try {
+          const res = origRequestPointerLock.apply(this, args);
+          if (res && typeof (res as any).catch === 'function') {
+            (res as any).catch(() => {
+              // Suppress PointerLock SecurityError gracefully
+            });
+          }
+          return res;
+        } catch (e) {
+          // Ignore synchronous pointer lock errors
+        }
+      };
+      (patched as any)._patched = true;
+      HTMLCanvasElement.prototype.requestPointerLock = patched;
+    }
+  }
+
+  // 2. Patch EmulatorJS.prototype.gamepadEvent
+  const patchEmulatorJSPrototype = (cls: any) => {
+    if (!cls || !cls.prototype || cls.prototype._gamepadPatched) return;
+    cls.prototype._gamepadPatched = true;
+    const origGamepadEvent = cls.prototype.gamepadEvent;
+
+    cls.prototype.gamepadEvent = function (t: any) {
+      if (!this.started || !t) return;
+      if (!this.gamepad) return;
+
+      if (!Array.isArray(this.gamepad.gamepads)) {
+        this.gamepad.gamepads = [];
+      }
+
+      // Safeguard against missing/undefined gamepad at t.gamepadIndex
+      let gp = this.gamepad.gamepads[t.gamepadIndex];
+      if (!gp || !gp.id) {
+        gp = this.gamepad.gamepads.find((g: any) => g && g.index === t.gamepadIndex)
+          || this.gamepad.gamepads[0];
+      }
+
+      // If still missing from EmulatorJS internal array, pull from navigator.getGamepads()
+      if (!gp || !gp.id) {
+        const raw = navigator.getGamepads ? navigator.getGamepads() : [];
+        gp = Array.from(raw).find((g: any) => g && g.connected && g.index === t.gamepadIndex)
+          || Array.from(raw).find((g: any) => g && g.connected);
+        if (gp) {
+          this.gamepad.gamepads.push(gp);
+        }
+      }
+
+      // If no gamepad at all, return safely without throwing TypeError: Cannot read properties of undefined (reading 'id')
+      if (!gp || !gp.id) return;
+
+      // Ensure slot at t.gamepadIndex is defined so original code will not throw
+      if (!this.gamepad.gamepads[t.gamepadIndex]) {
+        this.gamepad.gamepads[t.gamepadIndex] = gp;
+      }
+
+      // Automatically assign this gamepad to Player 1 if not assigned
+      const gpKey = `${gp.id}_${gp.index}`;
+      if (Array.isArray(this.gamepadSelection)) {
+        if (!this.gamepadSelection.includes(gpKey)) {
+          if (!this.gamepadSelection[0] || this.gamepadSelection[0] === "") {
+            this.gamepadSelection[0] = gpKey;
+          }
+        }
+      }
+
+      try {
+        return origGamepadEvent.call(this, t);
+      } catch (err) {
+        // Suppress any internal EmulatorJS gamepad errors
+      }
+    };
+  };
+
+  // 3. Patch GamepadHandler.prototype.dispatchEvent
+  const patchGamepadHandlerPrototype = (cls: any) => {
+    if (!cls || !cls.prototype || cls.prototype._dispatchPatched) return;
+    cls.prototype._dispatchPatched = true;
+    const origDispatch = cls.prototype.dispatchEvent;
+
+    cls.prototype.dispatchEvent = function (name: string, arg: any) {
+      try {
+        return origDispatch.call(this, name, arg);
+      } catch (err) {
+        // Prevent unhandled dispatch error from interrupting setTimeout loop
+      }
+    };
+  };
+
+  if ((window as any).EmulatorJS) {
+    patchEmulatorJSPrototype((window as any).EmulatorJS);
+  } else {
+    let _emu = (window as any).EmulatorJS;
+    try {
+      Object.defineProperty(window, 'EmulatorJS', {
+        configurable: true,
+        get() { return _emu; },
+        set(val) {
+          _emu = val;
+          if (_emu) patchEmulatorJSPrototype(_emu);
+        }
+      });
+    } catch (e) {
+      // Ignore if cannot redefine
+    }
+  }
+
+  if ((window as any).GamepadHandler) {
+    patchGamepadHandlerPrototype((window as any).GamepadHandler);
+  } else {
+    let _gp = (window as any).GamepadHandler;
+    try {
+      Object.defineProperty(window, 'GamepadHandler', {
+        configurable: true,
+        get() { return _gp; },
+        set(val) {
+          _gp = val;
+          if (_gp) patchGamepadHandlerPrototype(_gp);
+        }
+      });
+    } catch (e) {
+      // Ignore if cannot redefine
+    }
+  }
+}
+
+// Run patches immediately on module execution
+installEmulatorPatches();
+
 export function EmulatorPlayer({
   gameId,
   gameName,
@@ -148,8 +286,7 @@ export function EmulatorPlayer({
         }
 
         if (emu) {
-          // Direct fallback simulation for alternate player controls
-          // Select (Shift / Space / V):
+          // Alternative Select keys (Shift / Space / V):
           if (e.keyCode === 32 || e.keyCode === 16 || e.keyCode === 86) {
             emu.gameManager?.simulateInput(0, 2, 1);
           }
@@ -323,9 +460,12 @@ export function EmulatorPlayer({
     };
   }, [connectedGamepadName, toast]);
 
-  // 5. Load EmulatorJS dynamically with complete controls
+  // 5. Load EmulatorJS dynamically
   useEffect(() => {
     const loadEmulatorJS = () => {
+      // Re-apply patches before loading or starting
+      installEmulatorPatches();
+
       const core = SYSTEM_CORES[system] || 'nes';
 
       (window as any).EJS_player = '#emulator-container';
@@ -345,25 +485,8 @@ export function EmulatorPlayer({
       (window as any).EJS_startOnLoaded = true;
       (window as any).EJS_volume = isMuted ? 0 : 0.75;
 
-      // Configure explicit default controls with Shift for Select, Enter for Start, Z/X for B/A
-      (window as any).EJS_defaultControls = {
-        0: {
-          0: { value: "x", value2: "BUTTON_2" },         // Button A
-          1: { value: "s", value2: "BUTTON_4" },         // Button X
-          2: { value: "shift", value2: "SELECT" },       // Select
-          3: { value: "enter", value2: "START" },        // Start
-          4: { value: "up arrow", value2: "DPAD_UP" },   // Up
-          5: { value: "down arrow", value2: "DPAD_DOWN" }, // Down
-          6: { value: "left arrow", value2: "DPAD_LEFT" }, // Left
-          7: { value: "right arrow", value2: "DPAD_RIGHT" }, // Right
-          8: { value: "z", value2: "BUTTON_1" },         // Button B
-          9: { value: "a", value2: "BUTTON_3" },         // Button Y
-          10: { value: "q", value2: "LEFT_TOP_SHOULDER" }, // L
-          11: { value: "e", value2: "RIGHT_TOP_SHOULDER" }, // R
-        }
-      };
-
       (window as any).EJS_onGameStart = () => {
+        installEmulatorPatches();
         containerRef.current?.focus();
         setIsScreenFocused(true);
       };
@@ -378,6 +501,7 @@ export function EmulatorPlayer({
       script.src = 'https://cdn.emulatorjs.org/stable/data/loader.js';
       script.async = true;
       script.onload = () => {
+        installEmulatorPatches();
         setEmulatorReady(true);
         pollCanvas();
       };
