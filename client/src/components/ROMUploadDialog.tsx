@@ -50,12 +50,13 @@ export function ROMUploadDialog({ onUploadComplete }: ROMUploadDialogProps) {
     setIsUploading(true);
     try {
       // 1. Save locally in browser IndexedDB (Guaranteed local play regardless of file size)
+      const cleanTitle = title.trim();
+      const localId = 'local_' + cleanTitle.toLowerCase().replace(/[^a-z0-9]/g, '_');
       const arrayBuffer = await selectedFile.arrayBuffer();
-      const localId = 'local_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
 
       await localDB.addROM({
         id: localId,
-        title,
+        title: cleanTitle,
         system,
         fileName: selectedFile.name,
         fileData: arrayBuffer,

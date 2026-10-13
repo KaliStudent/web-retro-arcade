@@ -50,6 +50,30 @@ const SYSTEM_CORES: Record<string, string> = {
   'N64': 'n64',
 };
 
+export const resolveCore = (sys: string, urlOrName?: string): string => {
+  const norm = (sys || '').toLowerCase().trim();
+  if (norm.includes('snes') || norm.includes('super nintendo') || norm.includes('super famicom')) return 'snes';
+  if (norm.includes('nes') || norm.includes('famicom')) return 'nes';
+  if (norm.includes('gba') || norm.includes('advance')) return 'gba';
+  if (norm.includes('gbc') || norm.includes('color')) return 'gb';
+  if (norm.includes('game boy') || norm.includes('gb')) return 'gb';
+  if (norm.includes('genesis') || norm.includes('mega drive') || norm.includes('sega')) return 'segaMD';
+  if (norm.includes('n64') || norm.includes('nintendo 64')) return 'n64';
+  if (norm.includes('psx') || norm.includes('playstation')) return 'psx';
+
+  if (urlOrName) {
+    const ext = urlOrName.toLowerCase().split('?')[0].split('.').pop() || '';
+    if (['smc', 'sfc', 'fig'].includes(ext)) return 'snes';
+    if (['nes', 'fds', 'unf'].includes(ext)) return 'nes';
+    if (['gba'].includes(ext)) return 'gba';
+    if (['gbc'].includes(ext)) return 'gb';
+    if (['gb'].includes(ext)) return 'gb';
+    if (['bin', 'md', 'gen', 'smd'].includes(ext)) return 'segaMD';
+    if (['z64', 'n64', 'v64'].includes(ext)) return 'n64';
+  }
+  return SYSTEM_CORES[sys] || 'nes';
+};
+
 // Install runtime safety patches for EmulatorJS, GamepadHandler, and PointerLock
 function installEmulatorPatches() {
   if (typeof window === 'undefined') return;
@@ -474,36 +498,21 @@ export function EmulatorPlayer({
       // Re-apply patches before loading or starting
       installEmulatorPatches();
 
-      const core = SYSTEM_CORES[system] || 'nes';
-
-      (window as any).EJS_player = '#emulator-container';
-      (window as any).EJS_core = core;
-      (window as any).EJS_gameName = gameName;
-      (window as any).EJS_color = '#00f0ff';
-      (window as any).EJS_pathtodata = 'https://cdn.emulatorjs.org/stable/data/';
-      (window as any).EJS_defaultControls = {
-        0: {
-          0: { value: 'x', value2: 'BUTTON_2' },
-          1: { value: 'z', value2: 'BUTTON_1' },
-          2: { value: 'Shift', value2: 'SELECT' },
-          3: { value: 'Enter', value2: 'START' },
-          4: { value: 'ArrowUp', value2: 'DPAD_UP' },
-          5: { value: 'ArrowDown', value2: 'DPAD_DOWN' },
-          6: { value: 'ArrowLeft', value2: 'DPAD_LEFT' },
-          7: { value: 'ArrowRight', value2: 'DPAD_RIGHT' },
-          8: { value: 's', value2: 'BUTTON_4' },
-          9: { value: 'a', value2: 'BUTTON_3' },
-          10: { value: 'q', value2: 'BUTTON_5' },
-          11: { value: 'e', value2: 'BUTTON_6' },
-        }
-      };
-
       let resolvedUrl = gameUrl;
       if (!resolvedUrl) {
         resolvedUrl = `/api/roms/${gameId}`;
       } else if (resolvedUrl.startsWith('/') && !resolvedUrl.startsWith('/api/')) {
         resolvedUrl = window.location.origin + resolvedUrl;
       }
+
+      const core = resolveCore(system, resolvedUrl || gameName);
+
+      (window as any).EJS_player = '#emulator-container';
+      (window as any).EJS_core = core;
+      (window as any).EJS_gameName = gameName;
+      (window as any).EJS_color = '#00f0ff';
+      (window as any).EJS_pathtodata = 'https://cdn.emulatorjs.org/stable/data/';
+      delete (window as any).EJS_defaultControls; // MUST delete to prevent "Cannot read properties of undefined (reading '0')"
 
       (window as any).EJS_gameUrl = resolvedUrl;
       (window as any).EJS_startOnLoaded = true;
@@ -515,10 +524,28 @@ export function EmulatorPlayer({
         setIsScreenFocused(true);
       };
 
-      if ((window as any).EJS_emulator) {
-        setEmulatorReady(true);
-        pollCanvas();
-        return;
+      // Clean re-instantiation if EmulatorJS class was already loaded in this page session
+      if ((window as any).EmulatorJS) {
+        try {
+          const config = {
+            gameUrl: resolvedUrl,
+            dataPath: 'https://cdn.emulatorjs.org/stable/data/',
+            system: core,
+            gameName: gameName,
+            color: '#00f0ff',
+            volume: isMuted ? 0 : 0.75,
+            startOnLoad: true,
+          };
+          (window as any).EJS_emulator = new (window as any).EmulatorJS('#emulator-container', config);
+          if (typeof (window as any).EJS_onGameStart === 'function') {
+            (window as any).EJS_emulator.on('start', (window as any).EJS_onGameStart);
+          }
+          setEmulatorReady(true);
+          pollCanvas();
+          return;
+        } catch (e) {
+          console.warn('Re-instantiating EmulatorJS fallback to loader.js:', e);
+        }
       }
 
       const script = document.createElement('script');
@@ -569,6 +596,10 @@ export function EmulatorPlayer({
           }
         } catch (e) {}
         (window as any).EJS_emulator = null;
+      }
+      const container = document.getElementById('emulator-container');
+      if (container) {
+        container.innerHTML = '';
       }
     };
   }, [gameId, gameName, system, isMuted]);

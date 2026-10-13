@@ -85,12 +85,30 @@ export default function Home() {
   const loadLocalROMs = async () => {
     try {
       const roms = await localDB.getAllROMs();
-      const converted: Game[] = roms.map((r) => ({
+      // Deduplicate by clean title or filename to collapse any duplicate upload records
+      const seen = new Set<string>();
+      const uniqueRoms: typeof roms = [];
+      for (const r of roms) {
+        const key = (r.title || r.fileName).toLowerCase().trim();
+        if (!seen.has(key)) {
+          seen.add(key);
+          uniqueRoms.push(r);
+        }
+      }
+
+      // Revoke any previous blob URLs to prevent memory leaks
+      localGames.forEach((g) => {
+        if (g.romFilePath && g.romFilePath.startsWith('blob:')) {
+          URL.revokeObjectURL(g.romFilePath);
+        }
+      });
+
+      const converted: Game[] = uniqueRoms.map((r) => ({
         id: r.id,
         title: r.title,
         system: r.system,
         romFileName: r.fileName,
-        romFilePath: URL.createObjectURL(new Blob([r.fileData])),
+        romFilePath: URL.createObjectURL(new Blob([r.fileData], { type: 'application/octet-stream' })),
         fileSize: r.fileSize,
         coverImage: null,
         isFavorite: r.isFavorite,
@@ -103,8 +121,40 @@ export default function Home() {
     }
   };
 
+  const handleClearAllUploads = async () => {
+    if (!window.confirm("Are you sure you want to clear all uploaded ROMs from this session?")) {
+      return;
+    }
+    try {
+      await localDB.clearAllROMs();
+      localGames.forEach((g) => {
+        if (g.romFilePath && g.romFilePath.startsWith('blob:')) {
+          URL.revokeObjectURL(g.romFilePath);
+        }
+      });
+      setLocalGames([]);
+      toast({
+        title: "Uploads Cleared",
+        description: "All uploaded session ROMs have been removed.",
+      });
+    } catch (err) {
+      console.error('Failed to clear uploads:', err);
+    }
+  };
+
   useEffect(() => {
-    loadLocalROMs();
+    // If opening a brand-new browser session, clean up previous session uploaded ROMs
+    const isSessionActive = sessionStorage.getItem('retroarcade_active_session');
+    if (!isSessionActive) {
+      sessionStorage.setItem('retroarcade_active_session', 'true');
+      localDB.clearAllROMs().then(() => {
+        setLocalGames([]);
+      }).catch(() => {
+        loadLocalROMs();
+      });
+    } else {
+      loadLocalROMs();
+    }
   }, []);
 
   const { data: serverGames = [], isLoading } = useQuery({
@@ -309,6 +359,19 @@ export default function Home() {
               <Upload className="h-4 w-4" />
               Upload ROM
             </Button>
+            {localGames.length > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleClearAllUploads}
+                data-testid="button-header-clear-uploads"
+                className="font-mono text-xs bg-[#0b132b] border-red-500/40 text-red-400 hover:text-white hover:bg-red-500/20 gap-1.5"
+                title="Remove all uploaded session ROMs"
+              >
+                <Trash2 className="h-4 w-4" />
+                Clear Uploads ({localGames.length})
+              </Button>
+            )}
             <Button
               variant="ghost"
               size="icon"

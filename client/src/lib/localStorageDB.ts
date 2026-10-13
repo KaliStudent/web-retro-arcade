@@ -45,10 +45,34 @@ class LocalStorageDB {
   async addROM(rom: LocalROM): Promise<void> {
     if (!this.db) await this.init();
 
+    const existing = await this.getAllROMs();
+    const duplicate = existing.find(
+      (r) =>
+        r.id === rom.id ||
+        r.fileName.toLowerCase() === rom.fileName.toLowerCase() ||
+        r.title.toLowerCase().trim() === rom.title.toLowerCase().trim()
+    );
+
+    const targetId = duplicate ? duplicate.id : rom.id;
+    const finalRom = { ...rom, id: targetId };
+
     return new Promise((resolve, reject) => {
       const transaction = this.db!.transaction([STORE_NAME], 'readwrite');
       const store = transaction.objectStore(STORE_NAME);
-      const request = store.add(rom);
+      const request = store.put(finalRom);
+
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  async clearAllROMs(): Promise<void> {
+    if (!this.db) await this.init();
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction([STORE_NAME], 'readwrite');
+      const store = transaction.objectStore(STORE_NAME);
+      const request = store.clear();
 
       request.onsuccess = () => resolve();
       request.onerror = () => reject(request.error);

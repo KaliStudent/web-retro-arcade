@@ -10,6 +10,7 @@ import Terms from "@/pages/Terms";
 import Privacy from "@/pages/Privacy";
 import { useEffect } from "react";
 import { cleanupSession } from "@/lib/api";
+import { localDB } from "@/lib/localStorageDB";
 
 function Router() {
   return (
@@ -27,6 +28,7 @@ function App() {
     // Cleanup ROM files when user closes tab/browser
     const handleBeforeUnload = () => {
       cleanupSession();
+      localDB.clearAllROMs().catch(() => {});
     };
 
     window.addEventListener('beforeunload', handleBeforeUnload);
